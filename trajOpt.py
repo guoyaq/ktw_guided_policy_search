@@ -650,27 +650,32 @@ class trajOpt:
             kl = self.getKL(x_temp,u_temp,self.K_fit,self.k_fit)
             print("cost = ", cost, "KL = ", kl, "epsilon = ", self.epsilon)
 
-            if kl <= 1.1 * self.epsilon :
-                if kl > 0.9 * self.epsilon :
-                    print("=================== dual gradient descent is converged ===================")
-                    print("eta = ", self.eta)
-                    break
-                else :
-                    eta_max = self.eta
-                    geom = np.sqrt(eta_max * eta_min)
-                    self.eta = np.maximum(0.1*eta_max,geom)
-                    print("KL < epsilon // eta = ", self.eta)
+            if kl <= 1.1 * self.epsilon and kl >= 0.9 * self.epsilon and flag_lamda == False :
+                print("=================== dual gradient descent is converged ===================")
+                print("eta = ", self.eta)
+                break
+
             else :
-                if flag_lamda == True :                
+                if flag_lamda == True :
+                    # increase eta
                     eta_min = self.eta
                     geom = np.sqrt(eta_max * eta_min)
                     self.eta = np.minimum(10 * eta_min,geom)
                     print("PD is not satisfied // eta = ", self.eta)
                 else :
-                    eta_min = self.eta
-                    geom = np.sqrt(eta_max * eta_min)
-                    self.eta = np.minimum(10 * eta_min,geom)
-                    print("KL > epsilon // eta = ", self.eta)
+                    if kl < 0.9 * self.epsilon :
+                        # decrease eta
+                        eta_max = self.eta
+                        geom = np.sqrt(eta_max * eta_min)
+                        self.eta = np.maximum(0.1*eta_max,geom)
+                        print("KL < epsilon // eta = ", self.eta)   
+                    else :
+                        # increase eta 
+                        eta_min = self.eta
+                        geom = np.sqrt(eta_max * eta_min)
+                        self.eta = np.minimum(10 * eta_min,geom)
+                        print("PD is not satisfied // eta = ", self.eta)
+
                 
         return x_temp, u_temp, Quu_temp, Quu_inv_temp, self.eta, cost, K_temp, k_temp
         
