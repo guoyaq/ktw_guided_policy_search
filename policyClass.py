@@ -21,7 +21,7 @@ def print_np(x):
 
 # In[ ]:
 
-class policy :
+class localPolicy :
     def __init__(self,name,ix,iu,N) :
         self.name = name;
         self.ix = ix

@@ -61,6 +61,11 @@ class trajOpt:
         
         # constraint variable
         self.epsilon = 100
+
+        # initial storage
+        self.initStorage()
+
+    def initStorage(self) :
         
         # initial trajectory
         self.x0 = np.zeros(self.model.ix)
@@ -104,9 +109,9 @@ class trajOpt:
         self.Vx = np.zeros((self.N+1,self.model.ix))
         self.Vxx = np.zeros((self.N+1,self.model.ix,self.model.ix))
         
-        # fitted policy
-        self.K_fit = np.zeros((self.N,self.model.iu,self.model.ix))
-        self.k_fit = np.zeros((self.N,self.model.iu))
+        # # fitted policy
+        # self.K_fit = np.zeros((self.N,self.model.iu,self.model.ix))
+        # self.k_fit = np.zeros((self.N,self.model.iu))
         
     def sampleTraj(self,x0,x,u,K,Quu_inv) :
         
@@ -133,47 +138,8 @@ class trajOpt:
         self.K_fit = K_fit
         self.k_fit = k_fit
         
-        # initial trajectory
-        self.x0 = np.zeros(self.model.ix)
-        self.x0cov = np.identity(self.model.ix)
-        self.x = np.zeros((self.N+1,self.model.ix))
-        self.S = np.tile(0.01*np.identity(self.model.ix),[self.N+1,1,1])
-        self.u = np.zeros((self.N,self.model.iu))
-        self.C = np.tile(0.01*np.identity(self.model.ix+  self.model.iu),[self.N+1,1,1])
-        
-        # next trajectroy
-        self.xnew = np.zeros((self.N+1,self.model.ix))
-        self.unew = np.zeros((self.N,self.model.iu))
-        self.Snew = np.tile(0.01*np.identity(self.model.ix),[self.N+1,1,1])
-        self.Cnew = np.tile(0.01*np.identity(self.model.ix + self.model.iu),[self.N+1,1,1])  
-        
-        # line-search step size
-        self.Alpha = np.power(10,np.linspace(0,-3,4))
-        
-        # feedforward, feedback gain
-        self.l = np.zeros((self.N,self.model.iu))
-        self.L = np.zeros((self.N,self.model.iu,self.model.ix))
-        
-        # input variance
-        self.Quu_save = np.zeros((self.N,self.model.iu,self.model.iu))
-        self.Quu_inv_save = np.zeros((self.N,self.model.iu,self.model.iu))
-        
-        # model jacobian
-        self.fx = np.zeros((self.N,self.model.ix,self.model.ix))
-        self.fu = np.zeros((self.N,self.model.ix,self.model.iu))
-        
-        # cost derivative
-        self.c = np.zeros(self.N+1)
-        self.cnew = np.zeros(self.N+1)
-        self.cx = np.zeros((self.N+1,self.model.ix))
-        self.cu = np.zeros((self.N,self.model.iu))
-        self.cxx = np.zeros((self.N+1,self.model.ix,self.model.ix))
-        self.cxu = np.zeros((self.N,self.model.ix,self.model.iu))
-        self.cuu = np.zeros((self.N,self.model.iu,self.model.iu))
-        
-        # value function
-        self.Vx = np.zeros((self.N+1,self.model.ix))
-        self.Vxx = np.zeros((self.N+1,self.model.ix,self.model.ix))
+        # initial storage
+        self.initStorage()
         
     
     def getCost(self,x,u) :
@@ -186,9 +152,7 @@ class trajOpt:
     def getKL(self,x,u,K_fit,k_fit) :
         
         temp_KL = np.zeros(self.N)
-        # mean, var = self.policy.getPolicy(x)
         var = self.policy.policy_var
-        # var_inv = np.linalg.inv(var)
         var_inv = self.policy.policy_var_inv
         for i in range(self.N) :
             u_diff = np.dot(K_fit[i,:,:], x[i,:]) + k_fit[i,:] - u[i,:]
@@ -211,25 +175,21 @@ class trajOpt:
         else :
             N = np.size(x,axis = 0)
                 
-        # cost function for iLQR / dual variable
+        # cost function for iLQR divided by dual variable
         c1 = self.cost.estimateCost(x,u) / eta
         
-        # policy PDF term
-        # mean_g, var = self.policy.getPolicy(x)
-        # var = self.policy.policy_var
-        # var_inv = self.policy.policy_var_inv
-        
-        # fitted policy
+        # local approximated global policy
         x = np.expand_dims(x,2)
         k_fit = np.expand_dims(k_fit,2)
         mean_fit = np.matmul(K_fit, x) + k_fit
         mean_fit = np.squeeze(mean_fit)
         # var_inv = np.tile(np.linalg.inv(var),(N,1,1))
         
+        # cost for policy difference
         pol_diff = np.expand_dims(u - mean_fit,2)
         c2 = 0.5 * np.matmul(np.matmul(np.transpose(pol_diff,(0,2,1)),var_inv),pol_diff)
-        # divergence
-        return np.squeeze(c1 + c2);
+
+        return np.squeeze(c1 + c2)
     
     def diff_cost(self,x,u,eta,K_fit,k_fit,var_inv) :
         
@@ -251,12 +211,7 @@ class trajOpt:
         # cost function for modified cost
         c1 = self.cost.diffCost(x,u) / eta
         
-        # policy PDF term
-        # mean_g, var = self.policy.getPolicy(x)
-        # var = self.policy.policy_var
-        # var_inv = self.policy.policy_var_inv
-        
-        # fitted policy
+        # local approximated global policy
         x = np.expand_dims(x,2)
         k_fit = np.expand_dims(k_fit,2)
         mean_fit = np.matmul(K_fit, x) + k_fit
@@ -264,12 +219,10 @@ class trajOpt:
         # var_inv = np.tile(np.linalg.inv(var),(N,1,1))
         
         pol_diff = np.expand_dims(u - mean_fit,2)
-        # pol_jacobi = self.policy.jacobian(x)
         pol_jacobi = K_fit
         
         cx = np.matmul(np.matmul(np.transpose(pol_diff,(0,2,1)),var_inv), - pol_jacobi)
-        cu = np.matmul(np.transpose(pol_diff,(0,2,1)),var_inv)
-        
+        cu = np.matmul(np.transpose(pol_diff,(0,2,1)),var_inv)       
         c2 = np.squeeze( np.dstack((cx,cu)) )
 
         return  c1 + c2
@@ -294,12 +247,7 @@ class trajOpt:
         # cost function for modified cost
         c1 = self.cost.hessCost(x,u) / eta
         
-        # policy PDF term
-        # mean_g, var = self.policy.getPolicy(x)
-        # var = self.policy.policy_var
-        # var_inv = self.policy.policy_var_inv
-        
-        # fitted policy
+        # local approximated global policy
         x = np.expand_dims(x,2)
         k_fit = np.expand_dims(k_fit,2)
         mean_fit = np.matmul(K_fit, x) + k_fit
@@ -307,11 +255,11 @@ class trajOpt:
         # var_inv = np.tile(np.linalg.inv(var),(N,1,1))
         
         pol_diff = np.expand_dims(u - mean_fit,2)
-        # pol_jacobi = self.policy.jacobian(x)
         pol_jacobi = K_fit
-        
+
+        # additional term
         cxx = np.matmul(np.matmul(np.transpose(- pol_jacobi,(0,2,1)),var_inv), - pol_jacobi)
-        cux = np.matmul( var_inv, - pol_jacobi)
+        cux = np.matmul(var_inv, - pol_jacobi)
         cuu = var_inv
         
         c2 = np.squeeze(np.hstack((np.dstack((cxx,np.transpose(cux,(0,2,1)))),np.dstack((cux,cuu)))))
@@ -414,6 +362,7 @@ class trajOpt:
             Qux_reg = self.cxu[i,:,:].T + np.dot(np.dot(self.fu[i,:,:].T, Vxx_reg), self.fx[i,:,:])
             QuuF = self.cuu[i,:,:] + np.dot(np.dot(self.fu[i,:,:].T, Vxx_reg), self.fu[i,:,:])
             Quu_save[i,:,:] = QuuF
+
             # add input constraints here!!
         
             # control gain      
@@ -446,10 +395,10 @@ class trajOpt:
         
     def update(self,x0,u0):
         # current position
-        self.x0 = x0;
+        self.x0 = x0
         
         # initial input
-        self.u = u0;
+        self.u = u0
         
         # state & input & horizon size
         ix = self.model.ix
@@ -457,8 +406,8 @@ class trajOpt:
         N = self.N
         
         # initialzie parameters is already done in initializer
-        self.lamda = 1e-7;
-        self.dlamda = 1.0;
+        self.lamda = 1e-7
+        self.dlamda = 1.0
         self.lamdaFactor = 1.6
         self.dV = np.zeros((1,2))
         
@@ -484,7 +433,7 @@ class trajOpt:
             # self.c[self.N] = 0
             if diverge == False:
                 self.u = self.Alpha[j]*self.u
-                break;
+                break
                 pass
             pass
         
@@ -493,8 +442,6 @@ class trajOpt:
         flgChange = True
         for iteration in range(self.maxIter) :
             # differentiate dynamics and cost
-            # TODO - we need a more fast algorithm to calculate derivs of dyn, cost
-            #        1. using not for loop, but elementwise calculation
             if flgChange == True:
                 start = time.clock()
                 self.fx, self.fu = self.model.diffDyn(self.x[0:N,:],self.u)
@@ -516,7 +463,7 @@ class trajOpt:
             time_derivs = (time.clock() - start)
             
             # backward pass
-            backPassDone = False;
+            backPassDone = False
             while backPassDone == False:
                 start =time.clock()
                 diverge,self.Quu_save,self.Quu_inv_save = self.backward()
@@ -557,7 +504,7 @@ class trajOpt:
             if backPassDone == True :
                 start = time.clock()
                 for i in self.Alpha :
-                    self.xnew,self.unew,self.cnew,self.Snew,self.Cnew = self.forward(self.x0,self.u,self.L,self.x,                                                                 self.l,i,self.eta,                                                                  self.x0cov,self.fx,self.fu,self.Quu_inv_save)
+                    self.xnew,self.unew,self.cnew,self.Snew,self.Cnew = self.forward(self.x0,self.u,self.L,self.x,                                                                 self.l,i,self.eta,self.x0cov,self.fx,self.fu,self.Quu_inv_save)
                     dcost = np.sum( self.c ) - np.sum( self.cnew )
                     expected = -i * (self.dV[0,0] + i * self.dV[0,1])
                     if expected > 0 :

@@ -22,7 +22,7 @@ def print_np(x):
 
 # In[11]:
 
-class modelLearn :
+class localModelLearn :
     def __init__(self,name,ix,iu,N,movHorizon,xuxDataIni,bool_GP = False):
         self.name = name
         self.N = N
@@ -166,7 +166,7 @@ class modelLearn :
         return np.squeeze( np.dot(self.A[idx,:,:],x) + np.dot(self.B[idx,:,:],u) + self.C[idx,:] )
     
     
-class policyLearn :
+class localPolicyLearn :
     def __init__(self,name,ix,iu,N,movHorizon,xuDataIni):
         self.name = name
         self.N = N

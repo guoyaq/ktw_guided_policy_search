@@ -21,13 +21,13 @@ def print_np(x):
 
 # In[ ]:
 
-import model
-import cost
-import iLQR
-import poliOpt
-import trajOpt
-import policyClass
-import modelLearn
+from model import unicycle
+from cost import tracking
+from iLQR import iLQR
+from poliOpt import poliOpt
+from trajOpt import trajOpt
+from policyClass import localPolicy
+from modelLearn import localModelLearn, localPolicyLearn
 from gps_util import getCostNN, getCostAppNN, getCostTraj, getObs, getDesired
 
 class mdGPS :
@@ -53,10 +53,10 @@ class mdGPS :
         self.stepIni = 0.02
         
         # policy, traj class, real-robot model
-        self.myModel = model.unicycle('unicycle')
-        self.myCost = cost.unicycle('unicycle',self.x_t)
-        self.myPolicy = poliOpt.poliOpt('unicycle',self.hidden_num,5000,self.stepIni,self.io,self.iu,self.N)
-        self.myTraj = trajOpt.trajOpt('unicycle',self.N,self.myModel,self.myCost)
+        self.myModel = unicycle('unicycle')
+        self.myCost = tracking('unicycle',self.x_t)
+        self.myPolicy = poliOpt('unicycle',self.hidden_num,5000,self.stepIni,self.io,self.iu,self.N)
+        self.myTraj = trajOpt('unicycle',self.N,self.myModel,self.myCost)
         
         # step size used in step adjustment
         self.epsilon = 5
@@ -73,22 +73,24 @@ class mdGPS :
         self.num_sample = self.num_fit
         
         # NN iter
-        self.iter_NN = 100
+        self.maxIterNN = 100
         
         # policy type
         self.onPolicy = True
         
-        # observation?
+        # is state different with obsevation?
         self.obsFlag = True
 
     def update(self) :
-        #
+        # main loop for mdgps
+
+        # time horizon & dimension
         N = self.N
         ix = self.ix
         iu = self.iu
         io = self.io
         
-        # save variable
+        # saving NN parameters // not used currently
         W1_save = np.zeros((self.maxIter+1,self.ix,self.hidden_num))
         W2_save = np.zeros((self.maxIter+1,self.hidden_num,self.hidden_num))
         W3_save = np.zeros((self.maxIter+1,self.hidden_num,self.iu))
@@ -97,17 +99,15 @@ class mdGPS :
         b3_save = np.zeros((self.maxIter+1,self.iu))
         var_save = np.zeros((self.maxIter+1,self.N,self.iu,self.iu))
         
-        # stepsize setting for supervised learning
+        # stepsize setting for supervised learning (policy optimization)
         stepIni = self.stepIni
         stepSize = stepIni
            
-        # dual variable
+        # dual variable for kl divergence inequality constraint
         eta_ini = 1
         eta = eta_ini
-        etaPI_ini = 1 * np.ones(N)
-        etaPI = etaPI_ini
         
-        # initial cost
+        # initial cost / set inf
         cNmP = 1e8
         cNmN = 1e8
         cNmN_pre = 1e8
@@ -117,10 +117,10 @@ class mdGPS :
         # real cost from robot
         cost_real = np.zeros(self.maxIter)
         
-        # Initial policy from iLQR under known nominal model (maybe unicycle..)
+        # Initial policy from iLQR under known nominal model // pre-training for NN
         W1,b1,W2,b2,W3,b3,pol_var,pol_var_inv,costNN_pre,uNominal, iniPolicy = self.getInitialPolicy(stepIni)
         
-        # parameter save
+        # saving initial NN parameters
         W1_save[0,:,:] = W1
         W2_save[0,:,:] = W2
         W3_save[0,:,:] = W3
@@ -129,26 +129,26 @@ class mdGPS :
         b3_save[0,:] = b3
         var_save[0,:,:,:] = pol_var
         
-        # initialize local policy, local approximation to the global policy
+        # initialize local policy, local approximated global policy
         localPolicySet = [''] * self.num_ini
         appGlobalPolicySet = [''] * self.num_ini
         
         # initialize fitted model
         myFitModelSet = [''] * self.num_ini
         for j in range(self.num_ini) :
-            myFitModelSet[j] = modelLearn.modelLearn('hi',self.ix,self.iu,self.N,10,np.ones((N,8,1)))
+            myFitModelSet[j] = localModelLearn('hi',self.ix,self.iu,self.N,10,np.ones((N,8,1)))
         myFitModelOldSet = myFitModelSet
         
         # initialize fitted model
         myFitPolicySet = [''] * self.num_ini
         for j in range(self.num_ini) :
-            myFitPolicySet[j] = modelLearn.policyLearn('hi',self.ix,self.iu,self.N,10,np.ones((N,5,1)))
+            myFitPolicySet[j] = localPolicyLearn('hi',self.ix,self.iu,self.N,10,np.ones((N,5,1)))
 
         
         ####################### Variables ###########################
         # x_save ---> data for supervised learning of policy
         # x_new, x_traj  ---> the result of trajectory optimization along initial position
-        # x_fit ---> data to fit linearized policy
+        # x_fit ---> data to fitting linearized policy
         # x_ini  ---> data for initial policy opitmization, it is resutled from iLQR.
         # space for trajectory from optimization along initial condition
         x_traj = np.zeros((self.num_ini,self.N+1,self.ix))
@@ -179,20 +179,18 @@ class mdGPS :
             cost_real_ini = np.zeros(self.num_ini)
             for j in range(self.num_ini) :
                 print(j, "initial position in trajectory optimization")
-                # initial position selection
-                # x_0 = self.x0[j,:]
                 
                 # 1. move real robot to get sample used for model learning, approximate global policy
+                print("move the robot !!")
                 if i == 0:
                     x_fit, u_fit_m, cost_fit, o_fit = self.driveRobot(self.x0[j,:],self.onPolicy,i,iniPolicy) 
                 else :
                     x_fit, u_fit_m, cost_fit, o_fit = self.driveRobot(self.x0[j,:],self.onPolicy,i,localPolicySet[j])
-                cost_real_ini[j] = np.mean(cost_fit)
-                
+                cost_real_ini[j] = np.mean(cost_fit)             
                 
                 # 2. fit linear gaussian global dynamics
                 myFitModelOldSet[j] = myFitModelSet[j]
-                print("fit model prior !!")
+                print("fit the local model !!")
                 myFitModelSet[j].update(x_fit,u_fit_m)
                 if i == 0 : 
                     myFitModelSet[j].data_aug(x_fit,u_fit_m,True)
@@ -200,7 +198,7 @@ class mdGPS :
                     myFitModelSet[j].data_aug(x_fit,u_fit_m)
                 
                 # 3. fit linearized global policy using samples
-                # this fitted policy should be class
+                print("fit the approximated global model !!")
                 appGlobalPolicySet[j], myFitPolicySet[j] = self.fittingGlobalPolicy(x_fit,o_fit,myFitPolicySet[j])
                 K_fit = appGlobalPolicySet[j].K_mat
                 k_fit = appGlobalPolicySet[j].k_mat
@@ -209,12 +207,11 @@ class mdGPS :
                 else : 
                     myFitPolicySet[j].data_aug(x_fit,appGlobalPolicySet[j].u_nominal)
                 
-                
-                
+               
                 # 4. trajectory optimization 
                 self.myTraj.setEnv(self.myPolicy,eta,self.epsilon,K_fit,k_fit,myFitModelSet[j])
                 x_new,u_new, Quu_new, Quu_inv_new, eta_new, cost_new, K_new, k_new = self.myTraj.iterDGD(self.x0[j,:],uNominal)
-                localPolicySet[j] = policyClass.policy("local",ix,iu,N)
+                localPolicySet[j] = localPolicy("local",ix,iu,N)
                 localPolicySet[j].setter(K_new,k_new,x_new,u_new,Quu_inv_new)
                 
                 # cost, eta save
@@ -223,7 +220,7 @@ class mdGPS :
                 cost_save_pm[j] = getCostTraj(self.x0[j,:],localPolicySet[j],N,self.myTraj,myFitModelOldSet[j])
                 # new setting
                 eta = eta_new
-#                 uNominal = u_new 
+                # uNominal = u_new 
 
                 # 5. generate samples for supervised learning
                 num_sample = self.num_sample
@@ -252,7 +249,7 @@ class mdGPS :
             # 6. policy optimzation using supervised learning based on SGD
             print("policy optimization start!!")
             stepSize = stepSize * 0.6
-            self.myPolicy.setEnv(self.iter_NN,stepIni)
+            self.myPolicy.setEnv(self.maxIterNN,stepIni)
             for jj in range(20) :               
                 W1,b1,W2,b2,W3,b3,pol_var,pol_var_inv = self.myPolicy.update(o_save,u_save,var_inv_save * np.mean(eta_save) ,var_inv_set_save,self.num_ini*self.num_sample)
                 c_temp = np.zeros(self.num_ini)
@@ -263,7 +260,7 @@ class mdGPS :
                     print colored('policy optimization is diversed cost is', 'red'), colored(np.mean(c_temp), 'red')
                     # flag_eps = False
                     stepSize = stepIni
-                    self.myPolicy.setEnv(self.iter_NN, stepSize / (10*jj+1))
+                    self.myPolicy.setEnv(self.maxIterNN, stepSize / (10*jj+1))
                     # epsilon = 0.5 * epsilon
                 else : 
                     cPmP_NN = cNmN_NN
@@ -393,7 +390,7 @@ class mdGPS :
 #             K_fit[ip,:,:] = KMat_fit[:,0:ix]
 #             k_fit[ip,:] = KMat_fit[:,ix]
             
-        tempPolicy = policyClass.policy("global",ix,iu,N)
+        tempPolicy = localPolicy("global",ix,iu,N)
         tempPolicy.setter(myFitPolicy.K,myFitPolicy.k,x_fit,u_fit_p,var_temp)
             
         return tempPolicy, myFitPolicy
@@ -464,7 +461,7 @@ class mdGPS :
         
         print("initial trajectories from iLQR")  
         # Initial trajectory distribution from iLQR with low number of iterations
-        i1 = iLQR.iLQR('unicycle',self.N,2,self.myModel,self.myCost)
+        i1 = iLQR('unicycle',self.N,2,self.myModel,self.myCost)
         x0 = self.x0
         u0 = self.u0
         num_sample = 20
@@ -507,11 +504,11 @@ class mdGPS :
             var_inv_ini[N*index:N*(index+1),:,:] = Quu 
             var_inv_set_ini[:,:,:,k] = Quu
         
-        iniPolicy = policyClass.policy("local",ix,iu,N)
+        iniPolicy = localPolicy("local",ix,iu,N)
         
         print("initial policy optimization starts!!")
         for j in range(5) :
-            self.myPolicy.setEnv(self.iter_NN,stepIni / (j+1) )
+            self.myPolicy.setEnv(self.maxIterNN,stepIni / (j+1) )
             W1,b1,W2,b2,W3,b3,pol_var,pol_var_inv = self.myPolicy.update(o_ini,u_ini,var_inv_ini,var_inv_set_ini,num_sample)
             # costNN_pre = getCostNN(x0[0,:],self.myPolicy,N,self.myTraj,self.myModel)
             costNN_pre = 1e4
@@ -528,22 +525,4 @@ class mdGPS :
         
         return W1,b1,W2,b2,W3,b3,pol_var,pol_var_inv,costNN_pre,u, iniPolicy
         # return pol_var,pol_var_inv,costNN_pre,u, iniPolicy
-
-
-# In[ ]:
-
-# myGPS = mdGPS('hi')
-# W1_save, W2_save, W3_save, b1_save, b2_save, b3_save, var_save, i ,cost_real = myGPS.update()
-
-
-# In[ ]:
-
-# # i=4
-# np.savetxt('w1.txt',W1_save[i,:,:])
-# np.savetxt('w2.txt',W2_save[i,:,:])
-# np.savetxt('w3.txt',W3_save[i,:,:])
-# np.savetxt('b1.txt',b1_save[i,:])
-# np.savetxt('b2.txt',b2_save[i,:])
-# np.savetxt('b3.txt',b3_save[i,:])
-# # np.savetxt('var.txt',var_save[i,:,:])
 

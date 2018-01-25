@@ -19,7 +19,7 @@ def print_np(x):
 # In[ ]:    
 class unicycle:
     def __init__(self,name):
-        self.name = name;
+        self.name = name
         self.ix = 3
         self.iu = 2
         self.delT = 0.1

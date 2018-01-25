@@ -19,7 +19,7 @@ def print_np(x):
 
 # In[71]:
 
-class unicycle:
+class tracking :
     def __init__(self,name,x_t):
         self.name = name
        
