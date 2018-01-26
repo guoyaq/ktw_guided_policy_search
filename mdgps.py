@@ -28,7 +28,7 @@ from poliOpt import poliOpt
 from trajOpt import trajOpt
 from policyClass import localPolicy
 from modelLearn import localModelLearn, localPolicyLearn
-from gps_util import getCostNN, getCostAppNN, getCostTraj, getObs, getDesired
+from gps_util import getCostNN, getCostAppNN, getCostTraj, getObs, getDesired, getPlot
 
 class mdGPS :
     def __init__(self,name):
@@ -44,11 +44,13 @@ class mdGPS :
         
                 
         # the number of initial position 
-        self.num_ini = 3
-        self.x0 = np.array( [ [0,-2,np.pi/2],[2,-2,np.pi/2],[-2,-2,np.pi/2]] )
+        self.num_ini = 1
+        # self.x0 = np.array( [ [0,-2,np.pi/2],[2,-2,np.pi/2],[-2,-2,np.pi/2]] )
+        self.x0 = np.expand_dims( np.array( [1.0,0.5,np.pi/2] ), axis=0 )
         # self.x0 = np.array( [ [0,-2,np.pi/2]] )
         self.u0 = np.zeros( (self.N,2) )
-        self.x_t = np.array([0,3])
+        # self.x_t = np.array([0,3])
+        self.x_t = np.array([3.5,3.0])
         
         self.stepIni = 0.02
         
@@ -312,7 +314,7 @@ class mdGPS :
             # test policy
             self.testRobot(self.x0) 
             # 7. terminal condition (when the change of cNmN is extremly low)            
-            if np.abs(cNmN_NN - cPmP_NN) < 0.5 :
+            if np.abs(cNmN_NN - cPmP_NN) < 0.01 :
                 print("SUCCEESS : cost change < tolFun")
                 break
             else :
@@ -329,7 +331,7 @@ class mdGPS :
         ix = self.ix
         iu = self.iu
         io = self.io
-        num_fit = 3
+        num_fit = self.num_ini
         
         # data used for model learning
         x_fit = np.zeros((N+1,ix,num_fit))
@@ -360,15 +362,8 @@ class mdGPS :
             cost_fit[im] = self.myTraj.getCost(x_fit[:,:,im],u_fit_m[:,:,im])
             
             print colored('mean value of real cost is', 'yellow'), colored(cost_fit[im], 'yellow')
-        plt.figure(1)    
-        plt.subplot(121)
-        plt.axis([-3, 3, -3, 3])
-        for im in range(num_fit) : 
-            plt.plot(x_fit[:,0,im],x_fit[:,1,im])
-        plt.subplot(122)
-        for im in range(num_fit) : 
-            plt.plot(range(0,N),u_fit_m[:,0,im])
-        plt.show()   
+
+        getPlot(x_fit,u_fit_m,self.x_t,num_fit,N)    
                 
     def fittingGlobalPolicy(self,x_fit,o_fit,myFitPolicy) :
         # variables
@@ -431,7 +426,6 @@ class mdGPS :
             for ip in range(N) :
                 if onPolicy == False :
                     
-                    # u_temp = u_traj[ip,:] + k_traj[ip,:] + np.dot(K_traj[ip,:,:],x_fit[ip,:,im] - x_traj[ip,:])
                     u_temp = np.random.multivariate_normal(u_traj[ip,:] + k_traj[ip,:] + np.dot(K_traj[ip,:,:],x_fit[ip,:,im] - x_traj[ip,:]),Quu_inv_traj[ip,:,:] / 1 )
                       
                 else :
@@ -453,22 +447,16 @@ class mdGPS :
             cost_fit[im] = self.myTraj.getCost(x_fit[:,:,im],u_fit_m[:,:,im])
             
             print colored('mean value of real cost is', 'yellow'), colored(cost_fit[im], 'yellow')
-        plt.figure(1)    
-        plt.subplot(121)
-        plt.axis([-3, 3, -3, 3])
-        for im in range(num_fit) : 
-            plt.plot(x_fit[:,0,im],x_fit[:,1,im])
-        plt.subplot(122)
-        for im in range(num_fit) : 
-            plt.plot(range(0,N),u_fit_m[:,0,im])
-        plt.show()
+        
+        getPlot(x_fit,u_fit_m,self.x_t,num_fit,N)  
+
         return x_fit, u_fit_m, cost_fit, o_fit
                 
     def getInitialPolicy(self,stepIni) :
         
         print("initial trajectories from iLQR")  
         # Initial trajectory distribution from iLQR with low number of iterations
-        i1 = iLQR('unicycle',self.N,2,self.myModel,self.myCost)
+        i1 = iLQR('unicycle',self.N,1,self.myModel,self.myCost)
         x0 = self.x0
         u0 = self.u0
         num_sample = 20
@@ -487,7 +475,7 @@ class mdGPS :
         # iLQR with prior model
         x, u, Quu, Quu_inv, K, k_mat = i1.update(x0[0,:],u0)
         u = u / 4
-        K = K
+        K = K / 4
         k_mat = k_mat / 4
 
         for k in range(num_sample):

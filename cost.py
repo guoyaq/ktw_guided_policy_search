@@ -24,8 +24,8 @@ class tracking :
         self.name = name
        
         self.Q = np.identity(2) * 1
-        self.Q = 0.1 * self.Q
-        # self.Q[1,1] = 0
+        self.Q = 0.5 * self.Q # 0.1
+        self.Q[1,1] = 0
         
         self.R = 1 * np.identity(2) * 1
         
@@ -56,7 +56,7 @@ class tracking :
         # distance to target      
         d = np.sqrt( np.sum(np.square(x[:,0:2] - self.x_t),1) )
         d = np.expand_dims(d,1)
-        d_1 = d - 1
+        d_1 = d - 0
         
         # theta diff
         y_diff = np.zeros((N,1))
@@ -66,11 +66,8 @@ class tracking :
         
         theta_target = np.arctan2(y_diff,x_diff)
         theta_diff = np.expand_dims(x[:,2],1) - theta_target
-      
-        # print_np(d_1)
-        # print_np(theta_diff)
+
         x_mat = np.expand_dims(np.hstack((d_1,theta_diff)),2)
-        # print_np(x_mat)
         Q_mat = np.tile(self.Q,(N,1,1))
         
         lx = np.squeeze( np.matmul(np.matmul(np.transpose(x_mat,(0,2,1)),Q_mat),x_mat) )
@@ -80,8 +77,10 @@ class tracking :
         R_mat = np.tile(self.R,(N,1,1))
         lu = np.squeeze( np.matmul(np.matmul(np.transpose(u_mat,(0,2,1)),R_mat),u_mat) )
 
+        cost_total = 0.5*(lx+lu)
+
         
-        return 0.5*(lx + lu)
+        return cost_total
     
     def diffCost(self,x,u):
         

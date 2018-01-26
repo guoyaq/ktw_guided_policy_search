@@ -5,6 +5,7 @@
 
 from __future__ import division
 import numpy as np
+import matplotlib.pyplot as plt
 
 def print_np(x):
     print ("Type is %s" % (type(x)))
@@ -107,3 +108,31 @@ def getDesired(P_t,P_c) :
     output = np.hstack((P_des,yaw_des))
 
     return output
+
+def getPlot(x_fit,u_fit_m,x_t,num_fit,N): 
+
+    plt.figure(1,figsize=(20, 7))    
+    plt.subplot(131)
+    plt.axis([0, 4.0, 0, 4.0])
+    fS = 18
+    for im in range(num_fit) : 
+        plt.plot(x_fit[:,0,im],x_fit[:,1,im], linewidth=2.0)
+    plt.plot(np.linspace(0,4,10),np.linspace(0,4,10))
+    plt.plot(x_t[0],x_t[1],"o")
+    plt.gca().set_aspect('equal', adjustable='box')
+    plt.xlabel('X (m)', fontsize = fS)
+    plt.ylabel('Y (m)', fontsize = fS)
+    # plt.show()
+
+    plt.subplot(132)
+    for im in range(num_fit) : 
+        plt.plot(range(0,N),u_fit_m[:,0,im], linewidth=2.0)
+    plt.xlabel('time (s)', fontsize = fS)
+    plt.ylabel('v (m/s)', fontsize = fS)
+
+    plt.subplot(133)
+    for im in range(num_fit) : 
+        plt.plot(range(0,N),u_fit_m[:,1,im], linewidth=2.0)
+    plt.xlabel('time (s)', fontsize = fS)
+    plt.ylabel('w (rad/s)', fontsize = fS)
+    plt.show()
