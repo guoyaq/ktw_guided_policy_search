@@ -25,22 +25,31 @@ class unicycle:
         self.delT = 0.1
         
     def forwardDyn(self,x,u,idx):
+
+        # dimension
+        ndim = np.ndim(x)
+        if ndim == 1: # 1 step state & input
+            N = 1
+            x = np.expand_dims(x,axis=0)
+            u = np.expand_dims(u,axis=0)
+        else :
+            N = np.size(x,axis = 0)
      
         # state & input
-        x1 = x[0]
-        x2 = x[1]
-        x3 = x[2]
+        x1 = x[:,0]
+        x2 = x[:,1]
+        x3 = x[:,2]
         
-        v = u[0]
-        w = u[1]
+        v = u[:,0]
+        w = u[:,1]
         
         # output
         f = np.zeros_like(x)
-        f[0] = v * np.cos(x3)
-        f[1] = v * np.sin(x3)
-        f[2] = w
+        f[:,0] = v * np.cos(x3)
+        f[:,1] = v * np.sin(x3)
+        f[:,2] = w
         
-        return (x + f * self.delT)
+        return np.squeeze(x + f * self.delT)
     
     def diffDyn(self,x,u):
 
@@ -49,7 +58,7 @@ class unicycle:
         if ndim == 1: # 1 step state & input
             N = 1
             x = np.expand_dims(x,axis=0)
-            u = np.expand_dims(x,axis=0)
+            u = np.expand_dims(u,axis=0)
         else :
             N = np.size(x,axis = 0)
         

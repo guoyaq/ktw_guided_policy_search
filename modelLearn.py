@@ -164,6 +164,11 @@ class localModelLearn :
     def forwardDyn(self,x,u,idx):
         
         return np.squeeze( np.dot(self.A[idx,:,:],x) + np.dot(self.B[idx,:,:],u) + self.C[idx,:] )
+
+    def setter(self,A,B,C) :
+        self.A = A
+        self.B = B
+        self.C = C
     
     
 class localPolicyLearn :

@@ -81,6 +81,9 @@ class mdGPS :
         # is state different with obsevation?
         self.obsFlag = True
 
+        # use kinematic model?
+        self.flagKinModel = True
+
     def update(self) :
         # main loop for mdgps
 
@@ -118,7 +121,7 @@ class mdGPS :
         cost_real = np.zeros(self.maxIter)
         
         # Initial policy from iLQR under known nominal model // pre-training for NN
-        W1,b1,W2,b2,W3,b3,pol_var,pol_var_inv,costNN_pre,uNominal, iniPolicy = self.getInitialPolicy(stepIni)
+        W1,b1,W2,b2,W3,b3,pol_var,pol_var_inv,costNN_pre,xNominal,uNominal, iniPolicy = self.getInitialPolicy(stepIni)
         
         # saving initial NN parameters
         W1_save[0,:,:] = W1
@@ -185,18 +188,27 @@ class mdGPS :
                 if i == 0:
                     x_fit, u_fit_m, cost_fit, o_fit = self.driveRobot(self.x0[j,:],self.onPolicy,i,iniPolicy) 
                 else :
+                    xNominal, uNominal = localPolicySet[j].x_nominal,localPolicySet[j].u_nominal
                     x_fit, u_fit_m, cost_fit, o_fit = self.driveRobot(self.x0[j,:],self.onPolicy,i,localPolicySet[j])
                 cost_real_ini[j] = np.mean(cost_fit)             
                 
+                
                 # 2. fit linear gaussian global dynamics
                 myFitModelOldSet[j] = myFitModelSet[j]
-                print("fit the local model !!")
-                myFitModelSet[j].update(x_fit,u_fit_m)
-                if i == 0 : 
-                    myFitModelSet[j].data_aug(x_fit,u_fit_m,True)
-                else : 
-                    myFitModelSet[j].data_aug(x_fit,u_fit_m)
-                
+                if not self.flagKinModel == True :
+                    print("fit the local model !!")
+                    myFitModelSet[j].update(x_fit,u_fit_m)
+                    if i == 0 : 
+                        myFitModelSet[j].data_aug(x_fit,u_fit_m,True)
+                    else : 
+                        myFitModelSet[j].data_aug(x_fit,u_fit_m)
+                else :
+                    tempA, tempB = self.myModel.diffDyn(xNominal[0:N,:],uNominal)
+                    tempC = self.myModel.forwardDyn(xNominal[0:N,:],uNominal,0) \
+                             - np.squeeze(np.matmul(tempA,np.expand_dims(xNominal[0:N,:],axis=2))) \
+                             - np.squeeze(np.matmul(tempB,np.expand_dims(uNominal,axis=2)))
+                    myFitModelSet[j].setter(tempA,tempB,tempC)
+
                 # 3. fit linearized global policy using samples
                 print("fit the approximated global model !!")
                 appGlobalPolicySet[j], myFitPolicySet[j] = self.fittingGlobalPolicy(x_fit,o_fit,myFitPolicySet[j])
@@ -383,12 +395,7 @@ class mdGPS :
                 u_fit_p[ip,:,im], var_temp = self.myPolicy.getPolicy(o_temp)
             
         myFitPolicy.update(x_fit, u_fit_p)
-#             # linear regression
-#             xMat_fit = np.vstack(( x_fit[ip,:,:] , np.ones((1,num_fit)) ))
-#             uMat_fit = u_fit_p[ip,:,:]
-#             KMat_fit = np.dot(uMat_fit, np.linalg.pinv(xMat_fit))
-#             K_fit[ip,:,:] = KMat_fit[:,0:ix]
-#             k_fit[ip,:] = KMat_fit[:,ix]
+
             
         tempPolicy = localPolicy("global",ix,iu,N)
         tempPolicy.setter(myFitPolicy.K,myFitPolicy.k,x_fit,u_fit_p,var_temp)
@@ -513,7 +520,7 @@ class mdGPS :
             # costNN_pre = getCostNN(x0[0,:],self.myPolicy,N,self.myTraj,self.myModel)
             costNN_pre = 1e4
             if costNN_pre < 1e10 :
-#                 cPmP_NN = costNN_pre
+                # cPmP_NN = costNN_pre
                 print colored('initial policy parameter is updated true cost is ', 'green'), colored(costNN_pre, 'green')
                 break
             else : 
@@ -523,6 +530,6 @@ class mdGPS :
         
         iniPolicy.setter(K,k_mat,x,u , pol_var)
         
-        return W1,b1,W2,b2,W3,b3,pol_var,pol_var_inv,costNN_pre,u, iniPolicy
+        return W1,b1,W2,b2,W3,b3,pol_var,pol_var_inv,costNN_pre,x,u, iniPolicy
         # return pol_var,pol_var_inv,costNN_pre,u, iniPolicy
 
