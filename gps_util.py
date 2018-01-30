@@ -109,7 +109,7 @@ def getDesired(P_t,P_c) :
 
     return output
 
-def getPlot(x_fit,u_fit_m,x_t,num_fit,N): 
+def getPlot(x_fit,u_fit_m,x_t,num_fit,N,x_new=None,u_new=None): 
 
     plt.figure(1,figsize=(20, 7))    
     plt.subplot(131)
@@ -117,6 +117,8 @@ def getPlot(x_fit,u_fit_m,x_t,num_fit,N):
     fS = 18
     for im in range(num_fit) : 
         plt.plot(x_fit[:,0,im],x_fit[:,1,im], linewidth=2.0)
+    if not x_new is None :
+        plt.plot(x_new[:,0],x_fit[:,1], linewidth=1.0,linestyle='--')
     plt.plot(np.linspace(0,4,10),np.linspace(0,4,10))
     plt.plot(x_t[0],x_t[1],"o")
     plt.gca().set_aspect('equal', adjustable='box')

@@ -110,7 +110,7 @@ class poliOpt:
         
     def meanOpt(self,set_num) :
         
-        batch_size = 128
+        batch_size = 64
         num_batch = int((set_num*self.N) / batch_size)
         loss = np.zeros(num_batch)
         x_batch = np.zeros((batch_size,self.ix))

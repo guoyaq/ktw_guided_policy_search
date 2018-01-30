@@ -1,8 +1,4 @@
-
 # coding: utf-8
-
-# In[1]:
-
 from __future__ import division
 import matplotlib.pyplot as plt
 get_ipython().magic(u'matplotlib inline')
@@ -29,7 +25,7 @@ import poliOpt
 # In[3]:
 
 class trajOpt:
-    def __init__(self,name,horizon,Model,Cost):
+    def __init__(self,name,horizon,Model,Cost,maxIter):
         # class name
         self.name = name
 
@@ -50,7 +46,7 @@ class trajOpt:
         self.lamdaMin = 1e-8
         self.tolFun = 1e-2
         self.tolGrad = 1e-4
-        self.maxIter = 5000
+        self.maxIter = maxIter
         self.zMin = 0
         self.last_head = True
         self.dV = np.zeros((1,2))
@@ -59,8 +55,22 @@ class trajOpt:
         # dual variable
         self.eta = 1
         
-        # constraint variable
-        self.epsilon = 100
+        # KL constraint variable
+        self.epsilon = 5
+
+        # state & input contstraints variables
+        self.phi = np.ones(self.N+1) * 1.0
+        self.tolConst = 1e-1
+
+        # flag const
+        self.flag_const = self.cost.flag_const
+
+        # variables for constraints # self.cost.ic,
+        mu_ini = 0.1
+        self.Mu = np.tile(np.identity(self.cost.ic),(self.N+1,1,1)) * mu_ini
+        self.Munew = np.tile(np.identity(self.cost.ic),(self.N+1,1,1)) * mu_ini
+        self.Mu_e = np.tile(np.identity(self.cost.ic),(self.N+1,1,1)) * mu_ini
+        self.lam = np.tile(np.identity(self.cost.ic),(self.N+1,1,1)) * 0.01
 
         # initial storage
         self.initStorage()
@@ -73,7 +83,7 @@ class trajOpt:
         self.x = np.zeros((self.N+1,self.model.ix))
         self.S = np.tile(0.01*np.identity(self.model.ix),[self.N+1,1,1])
         self.u = np.zeros((self.N,self.model.iu))
-        self.C = np.tile(0.01*np.identity(self.model.ix+  self.model.iu),[self.N+1,1,1])
+        self.C = np.tile(0.01*np.identity(self.model.ix+self.model.iu),[self.N+1,1,1])
         
         # next trajectroy
         self.xnew = np.zeros((self.N+1,self.model.ix))
@@ -122,7 +132,6 @@ class trajOpt:
         for i in range(self.N) :
             u_mean[i,:] = u[i,:] + np.dot(K[i,:,:],x_temp[i,:] - x[i,:])
             u_temp[i,:] = np.random.multivariate_normal(u_mean[i,:], Quu_inv[i,:,:] )
-            # u_temp[i,:] = u[i,:] + np.dot(K[i,:,:],x_temp[i,:] - x[i,:])
             x_temp[i+1,:] = self.model.forwardDyn(x_temp[i,:],u_temp[i,:],i)
         
         return x_temp,u_temp
@@ -140,29 +149,9 @@ class trajOpt:
         
         # initial storage
         self.initStorage()
-        
     
-    def getCost(self,x,u) :
         
-        u_temp = np.vstack((u,np.zeros((1,self.model.iu))))
-        temp_c = self.cost.estimateCost(x,u_temp)
-        
-        return np.sum( temp_c )
-        
-    def getKL(self,x,u,K_fit,k_fit) :
-        
-        temp_KL = np.zeros(self.N)
-        var = self.policy.policy_var
-        var_inv = self.policy.policy_var_inv
-        for i in range(self.N) :
-            u_diff = np.dot(K_fit[i,:,:], x[i,:]) + k_fit[i,:] - u[i,:]
-            temp_KL[i] = 0.5 * (np.trace( np.dot(var_inv[i,:,:],self.Quu_inv_save[i,:,:])) \
-                            + np.dot( np.dot( np.transpose(u_diff) ,var_inv[i,:,:]), u_diff) \
-                            - self.model.iu \
-                            + np.log( np.linalg.det(var[i,:,:]) / np.linalg.det(self.Quu_inv_save[i,:,:])) )
-        return np.sum( temp_KL )
-        
-    def estimate_cost(self,x,u,eta,K_fit,k_fit,var_inv):
+    def estimate_cost(self,x,u,eta,K_fit,k_fit,var_inv,Mu,lam):
         
         ndim = np.ndim(x)
         if ndim == 1: # 1 step state & input
@@ -172,18 +161,19 @@ class trajOpt:
             K_fit = np.expand_dims(K_fit,axis=0)
             k_fit = np.expand_dims(k_fit,axis=0)
             var_inv = np.expand_dims(var_inv,axis=0)
+            Mu = np.expand_dims(Mu,axis=0) # N * ic * ic
+            lam = np.expand_dims(lam,axis=0) # N * ic * ic
         else :
             N = np.size(x,axis = 0)
                 
         # cost function for iLQR divided by dual variable
-        c1 = self.cost.estimateCost(x,u) / eta
+        c1 = self.cost.estimateCost(x,u,Mu,lam) / eta
         
         # local approximated global policy
         x = np.expand_dims(x,2)
         k_fit = np.expand_dims(k_fit,2)
         mean_fit = np.matmul(K_fit, x) + k_fit
         mean_fit = np.squeeze(mean_fit)
-        # var_inv = np.tile(np.linalg.inv(var),(N,1,1))
         
         # cost for policy difference
         pol_diff = np.expand_dims(u - mean_fit,2)
@@ -191,7 +181,7 @@ class trajOpt:
 
         return np.squeeze(c1 + c2)
     
-    def diff_cost(self,x,u,eta,K_fit,k_fit,var_inv) :
+    def diff_cost(self,x,u,eta,K_fit,k_fit,var_inv,Mu,lam) :
         
         # state & input size
         ix = self.ix
@@ -205,11 +195,13 @@ class trajOpt:
             K_fit = np.expand_dims(K_fit,axis=0)
             k_fit = np.expand_dims(k_fit,axis=0)
             var_inv = np.expand_dims(var_inv,axis=0)
+            Mu = np.expand_dims(Mu,axis=0) # N * ic * ic
+            lam = np.expand_dims(lam,axis=0) # N * ic * ic
         else :
             N = np.size(x,axis = 0)
             
         # cost function for modified cost
-        c1 = self.cost.diffCost(x,u) / eta
+        c1 = self.cost.diffCost(x,u,Mu,lam) / eta
         
         # local approximated global policy
         x = np.expand_dims(x,2)
@@ -227,7 +219,7 @@ class trajOpt:
 
         return  c1 + c2
     
-    def hess_cost(self,x,u,eta,K_fit,k_fit,var_inv):
+    def hess_cost(self,x,u,eta,K_fit,k_fit,var_inv,Mu,lam):
         
         # state & input size
         ix = self.ix
@@ -241,11 +233,13 @@ class trajOpt:
             K_fit = np.expand_dims(K_fit,axis=0)
             k_fit = np.expand_dims(k_fit,axis=0)
             var_inv = np.expand_dims(var_inv,axis=0)
+            Mu = np.expand_dims(Mu,axis=0) # N * ic * ic
+            lam = np.expand_dims(lam,axis=0) # N * ic * ic
         else :
             N = np.size(x,axis = 0)
         
         # cost function for modified cost
-        c1 = self.cost.hessCost(x,u) / eta
+        c1 = self.cost.hessCost(x,u,Mu,lam) / eta
         
         # local approximated global policy
         x = np.expand_dims(x,2)
@@ -266,7 +260,7 @@ class trajOpt:
          
         return c1 + c2
         
-    def forward(self,x0,u,K,x,k,alpha,eta,x0cov,fx,fu,Quu_inv):
+    def forward(self,x0,u,K,x,k,alpha,eta,x0cov,fx,fu,Quu_inv,Mu,lam):
         # size
         ix = self.model.ix
         iu = self.model.iu
@@ -306,14 +300,16 @@ class trajOpt:
             dx = xnew[i,:] - x[i,:]
             unew[i,:] = u[i,:] + k[i,:] * alpha + np.dot(K[i,:,:],dx)
             xnew[i+1,:] = self.model.forwardDyn(xnew[i,:],unew[i,:],i)
-            cnew[i] = self.estimate_cost(xnew[i,:],unew[i,:],eta,K_fit[i,:,:],k_fit[i,:],var_inv[i,:,:])
+            cnew[i] = self.estimate_cost(xnew[i,:],unew[i,:], \
+                      eta,K_fit[i,:,:],k_fit[i,:],var_inv[i,:,:],Mu[i,:,:],lam[i,:,:])
             Cnew[i,0:ix,0:ix] = Snew[i,:,:]
             Cnew[i,0:ix,ix:ix+iu] = np.dot( Snew[i,:,:], K[i,:,:].T )
             Cnew[i,ix:ix+iu,0:ix] = np.dot( K[i,:,:], Snew[i,:,:] )
             Cnew[i,ix:ix+iu,ix:ix+iu] = np.dot( np.dot(K[i,:,:], Snew[i,:,:]), K[i,:,:].T ) + Quu_inv[i,:,:]
             Snew[i+1,:,:] = np.dot(np.dot(f[i,:,:],Cnew[i,:,:]),f[i,:,:].T)
         
-        cnew[N] = self.estimate_cost(xnew[N,:],np.zeros(self.model.iu),eta,np.zeros((iu,ix)),np.zeros(iu),np.zeros((iu,iu)))
+        cnew[N] = self.estimate_cost(xnew[N,:],np.zeros(self.model.iu),eta,
+                    np.zeros((iu,ix)),np.zeros(iu),np.zeros((iu,iu)),Mu[N,:,:],lam[N,:,:])
 
         return xnew,unew,cnew,Snew,Cnew
         
@@ -425,11 +421,13 @@ class trajOpt:
         for j in range(np.size(self.Alpha,axis=0)):
             for i in range(self.N):
                 self.x[i+1,:] = self.model.forwardDyn(self.x[i,:],self.Alpha[j]*self.u[i,:],i)  
-                self.c[i] = self.estimate_cost(self.x[i,:],self.Alpha[j]*self.u[i,:],self.eta,self.K_fit[i,:,:],self.k_fit[i,:],self.policy.policy_var_inv[i,:,:])
+                self.c[i] = self.estimate_cost(self.x[i,:],self.Alpha[j]*self.u[i,:],self.eta,self.K_fit[i,:,:],
+                            self.k_fit[i,:],self.policy.policy_var_inv[i,:,:],self.Mu_e[i,:,:],self.lam[i,:,:])
                 if  np.max( self.x[i+1,:] ) > 1e8 :                
                     diverge = True
                     pass
-            self.c[self.N] = self.estimate_cost(self.x[self.N,:],np.zeros(self.model.iu),self.eta,np.zeros((iu,ix)),np.zeros(iu),np.zeros((iu,iu)))
+            self.c[self.N] = self.estimate_cost(self.x[self.N,:],np.zeros(self.model.iu),
+                             self.eta,np.zeros((iu,ix)),np.zeros(iu),np.zeros((iu,iu)),self.Mu_e[N,:,:],self.lam[N,:,:])
             # self.c[self.N] = 0
             if diverge == False:
                 self.u = self.Alpha[j]*self.u
@@ -445,16 +443,20 @@ class trajOpt:
             if flgChange == True:
                 start = time.clock()
                 self.fx, self.fu = self.model.diffDyn(self.x[0:N,:],self.u)
-                c_x_u = self.diff_cost(self.x[0:N,:],self.u,self.eta,self.K_fit,self.k_fit,self.policy.policy_var_inv)
-                c_xx_uu = self.hess_cost(self.x[0:N,:],self.u,self.eta,self.K_fit,self.k_fit,self.policy.policy_var_inv)
+                c_x_u = self.diff_cost(self.x[0:N,:],self.u,self.eta,self.K_fit,self.k_fit,
+                        self.policy.policy_var_inv,self.Mu_e[0:N,:,:],self.lam[0:N,:,:])
+                c_xx_uu = self.hess_cost(self.x[0:N,:],self.u,self.eta,self.K_fit,self.k_fit,self.policy.policy_var_inv,
+                          self.Mu_e[0:N,:,:],self.lam[0:N,:,:])
                 c_xx_uu = 0.5 * ( np.transpose(c_xx_uu,(0,2,1)) + c_xx_uu )
                 self.cx[0:N,:] = c_x_u[:,0:self.model.ix]
                 self.cu[0:N,:] = c_x_u[:,self.model.ix:self.model.ix+self.model.iu]
                 self.cxx[0:N,:,:] = c_xx_uu[:,0:ix,0:ix]
                 self.cxu[0:N,:,:] = c_xx_uu[:,0:ix,ix:(ix+iu)]
                 self.cuu[0:N,:,:] = c_xx_uu[:,ix:(ix+iu),ix:(ix+iu)]
-                c_x_u = self.diff_cost(self.x[N,:],np.zeros(iu),self.eta,np.zeros((iu,ix)),np.zeros(iu),np.zeros((iu,iu)))
-                c_xx_uu = self.hess_cost(self.x[N,:],np.zeros(iu),self.eta,np.zeros((iu,ix)),np.zeros(iu),np.zeros((iu,iu)))
+                c_x_u = self.diff_cost(self.x[N,:],np.zeros(iu),self.eta,np.zeros((iu,ix)),np.zeros(iu),np.zeros((iu,iu)),
+                        self.Mu_e[N,:,:],self.lam[N,:,:])
+                c_xx_uu = self.hess_cost(self.x[N,:],np.zeros(iu),self.eta,np.zeros((iu,ix)),np.zeros(iu),np.zeros((iu,iu)),
+                          self.Mu_e[N,:,:],self.lam[N,:,:])
                 c_xx_uu = 0.5 * ( c_xx_uu + c_xx_uu.T)
                 self.cx[N,:] = c_x_u[0:self.model.ix]
                 self.cxx[N,:,:] = c_xx_uu[0:ix,0:ix]
@@ -504,7 +506,8 @@ class trajOpt:
             if backPassDone == True :
                 start = time.clock()
                 for i in self.Alpha :
-                    self.xnew,self.unew,self.cnew,self.Snew,self.Cnew = self.forward(self.x0,self.u,self.L,self.x,                                                                 self.l,i,self.eta,self.x0cov,self.fx,self.fu,self.Quu_inv_save)
+                    self.xnew,self.unew,self.cnew,self.Snew,self.Cnew = self.forward(self.x0,self.u,self.L,self.x,
+                            self.l,i,self.eta,self.x0cov,self.fx,self.fu,self.Quu_inv_save,self.Mu_e,self.lam)
                     dcost = np.sum( self.c ) - np.sum( self.cnew )
                     expected = -i * (self.dV[0,0] + i * self.dV[0,1])
                     if expected > 0 :
@@ -583,45 +586,117 @@ class trajOpt:
             pass
         return self.x, self.u, self.Quu_save, self.Quu_inv_save, self.L, self.l, lamda_max
     
+    def getCost(self,x,u) :
+        
+        u_temp = np.vstack((u,np.zeros((1,self.model.iu))))
+        temp_c = self.cost.estimateCost(x,u_temp)
+        
+        return np.sum( temp_c )
+        
+    def getKL(self,x,u,K_fit,k_fit) :
+        
+        temp_KL = np.zeros(self.N)
+        var = self.policy.policy_var
+        var_inv = self.policy.policy_var_inv
+        for i in range(self.N) :
+            u_diff = np.dot(K_fit[i,:,:], x[i,:]) + k_fit[i,:] - u[i,:]
+            temp_KL[i] = 0.5 * (np.trace( np.dot(var_inv[i,:,:],self.Quu_inv_save[i,:,:])) \
+                            + np.dot( np.dot( np.transpose(u_diff) ,var_inv[i,:,:]), u_diff) \
+                            - self.model.iu \
+                            + np.log( np.linalg.det(var[i,:,:]) / np.linalg.det(self.Quu_inv_save[i,:,:])) )
+        return np.sum( temp_KL )
+
     def iterDGD(self,x0,uIni) :
         
-        eta_max = 1e6
-        eta_min = 1e-6
+        
         u_temp = uIni
-        maxIterDGD = 10
+        maxIterDGD = 20
+        maxIterConst = 100
         print("DGD starts!! eta = ", self.eta)
-        for i in range(maxIterDGD) :
-            uIni = u_temp * 1.0
-            x_temp, u_temp, Quu_temp, Quu_inv_temp, K_temp, k_temp, flag_lamda = self.update(x0,uIni)
-            cost = self.getCost(x_temp,u_temp)
-            kl = self.getKL(x_temp,u_temp,self.K_fit,self.k_fit)
-            print("cost = ", cost, "KL = ", kl, "epsilon = ", self.epsilon)
+        for j in range(maxIterConst) :
+            eta_max = 1e10
+            eta_min = 1e-8
+            for i in range(maxIterDGD) :
+                uIni = u_temp * 1.0
+                x_temp, u_temp, Quu_temp, Quu_inv_temp, K_temp, k_temp, flag_lamda = self.update(x0,uIni)
+                cost = self.getCost(x_temp,u_temp)
+                kl = self.getKL(x_temp,u_temp,self.K_fit,self.k_fit)
+                print("cost = ", cost, "KL = ", kl, "epsilon = ", self.epsilon)
 
-            if kl <= 1.1 * self.epsilon and kl >= 0.9 * self.epsilon and flag_lamda == False :
-                print("=================== dual gradient descent is converged ===================")
-                print("eta = ", self.eta)
-                break
-
-            else :
+                # continuing condition
                 if flag_lamda == True :
                     # increase eta
                     eta_min = self.eta
                     geom = np.sqrt(eta_max * eta_min)
                     self.eta = np.minimum(10 * eta_min,geom)
-                    print("PD is not satisfied // eta = ", self.eta)
+                    print("PD is not satisfied // increased eta = ", self.eta)
+                    continue
                 else :
-                    if kl < 0.9 * self.epsilon :
-                        # decrease eta
-                        eta_max = self.eta
-                        geom = np.sqrt(eta_max * eta_min)
-                        self.eta = np.maximum(0.1*eta_max,geom)
-                        print("KL < epsilon // eta = ", self.eta)   
+                    pass
+
+                # terminal condition for KL divergence
+                if kl <= 1.1 * self.epsilon and kl >= 0.9 * self.epsilon and flag_lamda == False :
+                    print("=================== dual gradient descent is converged ===================")
+                    print("eta = ", self.eta)
+                    break
+
+                # eta updates
+                if kl < 0.9 * self.epsilon :
+                    # decrease eta
+                    eta_max = self.eta
+                    geom = np.sqrt(eta_max * eta_min)
+                    self.eta = np.maximum(0.1*eta_max,geom)
+                    print("KL < epsilon // decreased eta = ", self.eta)   
+                else :
+                    # increase eta 
+                    eta_min = self.eta
+                    geom = np.sqrt(eta_max * eta_min)
+                    self.eta = np.minimum(10 * eta_min,geom)
+                    print("KL > epsilon // increased eta = ", self.eta)
+                
+            if self.flag_const == False :
+                break
+
+            # constraint criterion
+            c_const = self.cost.ineqConst(x_temp, np.vstack((u_temp,np.zeros(self.model.iu)) )) # N * ic
+
+            if np.max(c_const) < self.tolConst:
+                self.tolConst = self.tolConst * 0.9
+                print("EXIT : max(c)", np.max(c_const), " < tolConst, tolConst becomes, ", self.tolConst)
+                break
+            else :
+                print("max(c) = ", np.max(c_const))
+
+            # Mu & lamda updates
+            print "update lagrangian variables"
+            for i in range(self.N+1) :    
+                for j in range(self.cost.ic) :
+                    # Mu uddate
+                    ################
+                    if c_const[i,j] > 0 or self.lam[i,j,j] > 0 :
+                        self.Mu[i,j,j] = self.Mu_e[i,j,j]
                     else :
-                        # increase eta 
-                        eta_min = self.eta
-                        geom = np.sqrt(eta_max * eta_min)
-                        self.eta = np.minimum(10 * eta_min,geom)
-                        print("PD is not satisfied // eta = ", self.eta)
+                        self.Mu[i,j,j] = 0  
+                    ################
+            
+                    if c_const[i,j] < self.phi[i] :
+                        # print "Hi",c_const[i,j],i
+                        self.lam[i,j,j] = np.max(( 0, self.lam[i,j,j] + self.Mu_e[i,j,j] * c_const[i,j] ))
+                        # print self.lam[i,j,j]
+                        self.phi[i] = self.phi[i] / 2
+                    else :
+                        if self.Mu_e[i,j,j] < 1e30 :
+                            self.Mu_e[i,j,j] = self.Mu_e[i,j,j] * 5
+                            # print "Hi", self.Mu_e[i,j,j]
+                        else :
+                            print "Mu reaches the limit"
+                            pass
+
+                # if i != self.N :
+                #     self.c[i] = self.cost.estimateCost(self.x[i,:],self.u[i,:],self.Mu_e[i,:,:],self.lam[i,:,:])
+                # else :
+                #     self.c[i] = self.cost.estimateCost(self.x[i,:],np.zeros(self.model.iu),self.Mu_e[i,:,:],self.lam[i,:,:])
+            
 
                 
         return x_temp, u_temp, Quu_temp, Quu_inv_temp, self.eta, cost, K_temp, k_temp

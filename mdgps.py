@@ -39,7 +39,7 @@ class mdGPS :
         self.ix = 3
         self.iu = 2
         self.io = 3
-        self.N = 150
+        self.N = 100
         self.hidden_num = 40
         
                 
@@ -51,22 +51,25 @@ class mdGPS :
         self.u0 = np.zeros( (self.N,2) )
         # self.x_t = np.array([0,3])
         self.x_t = np.array([3.5,3.0])
-        
-        self.stepIni = 0.02
+        # self.stepIni = 0.005
+        self.stepIni = 0.01
+
+        # flag for state & input constraints
+        self.flag_const = True
         
         # policy, traj class, real-robot model
         self.myModel = unicycle('unicycle')
-        self.myCost = tracking('unicycle',self.x_t)
+        self.myCost = tracking('unicycle',self.x_t,self.N,self.flag_const)
         self.myPolicy = poliOpt('unicycle',self.hidden_num,5000,self.stepIni,self.io,self.iu,self.N)
-        self.myTraj = trajOpt('unicycle',self.N,self.myModel,self.myCost)
+        self.myTraj = trajOpt('unicycle',self.N,self.myModel,self.myCost,100)
         
         # step size used in step adjustment
         self.epsilon = 5
-        self.eps_max = 1000
-        self.eps_min = 0.5
+        self.eps_max = 1e16
+        self.eps_min = 1e-6
         
         # maxIter used for update function
-        self.maxIter = 10
+        self.maxIter = 100
         
         # the number of sample for fitted model, which determines how many times robot actually works
         self.num_fit = 20
@@ -75,7 +78,7 @@ class mdGPS :
         self.num_sample = self.num_fit
         
         # NN iter
-        self.maxIterNN = 100
+        self.maxIterNN = 50
         
         # policy type
         self.onPolicy = True
@@ -259,10 +262,11 @@ class mdGPS :
             # set eta
             eta = eta_ini
             print colored('trajectory optimization is finished Traj estimated cost is', 'blue'), colored(cNmN, 'blue')
+            # getPlot(np.expand_dims(x_new,axis=2),np.expand_dims(u_new,axis=2),self.x_t,1,N)    
 
             # 6. policy optimzation using supervised learning based on SGD
             print("policy optimization start!!")
-            stepSize = stepSize * 0.6
+            stepSize = stepSize * 0.95
             self.myPolicy.setEnv(self.maxIterNN,stepIni)
             for jj in range(20) :               
                 W1,b1,W2,b2,W3,b3,pol_var,pol_var_inv = self.myPolicy.update(o_save,u_save,var_inv_save * np.mean(eta_save) ,var_inv_set_save,self.num_ini*self.num_sample)
@@ -312,9 +316,9 @@ class mdGPS :
             cost_real[i] = np.mean(cost_real_ini)
             
             # test policy
-            self.testRobot(self.x0) 
+            self.testRobot(self.x0,x_new,u_new) 
             # 7. terminal condition (when the change of cNmN is extremly low)            
-            if np.abs(cNmN_NN - cPmP_NN) < 0.01 :
+            if np.abs(cNmN_NN - cPmP_NN) < 0.1 :
                 print("SUCCEESS : cost change < tolFun")
                 break
             else :
@@ -323,7 +327,7 @@ class mdGPS :
                 
         return W1_save, W2_save, W3_save, b1_save, b2_save, b3_save, var_save,i,cost_real
           
-    def testRobot(self,x0) :
+    def testRobot(self,x0,x_new,u_new) :
         print "test starts"
         
         # parameter
@@ -363,7 +367,7 @@ class mdGPS :
             
             print colored('mean value of real cost is', 'yellow'), colored(cost_fit[im], 'yellow')
 
-        getPlot(x_fit,u_fit_m,self.x_t,num_fit,N)    
+        getPlot(x_fit,u_fit_m,self.x_t,num_fit,N,x_new,u_new)    
                 
     def fittingGlobalPolicy(self,x_fit,o_fit,myFitPolicy) :
         # variables
@@ -420,7 +424,7 @@ class mdGPS :
         cost_fit = np.zeros(num_fit)
         
         for im in range(num_fit):
-            x_fit[0,:,im] = x0 + np.array((1,1,0.3)) * (np.random.random(3) - 0.5)
+            x_fit[0,:,im] = x0 + np.array((1,1,0.3)) * (np.random.random(3) - 0.5) * 0.2
             o_fit[0,:,im] = getObs(self.x_t,x_fit[0,:,im],self.obsFlag)
             
             for ip in range(N) :
