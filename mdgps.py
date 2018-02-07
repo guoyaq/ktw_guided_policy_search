@@ -46,13 +46,12 @@ class mdGPS :
         # the number of initial position 
         self.num_ini = 1
         # self.x0 = np.array( [ [0,-2,np.pi/2],[2,-2,np.pi/2],[-2,-2,np.pi/2]] )
-        self.x0 = np.expand_dims( np.array( [1.0,0.5,np.pi/2] ), axis=0 )
+        self.x0 = np.expand_dims( np.array( [-2.0,-0.5,np.pi/2] ), axis=0 )
         # self.x0 = np.array( [ [0,-2,np.pi/2]] )
         self.u0 = np.zeros( (self.N,2) )
-        # self.x_t = np.array([0,3])
-        self.x_t = np.array([3.5,3.0])
+        self.x_t = np.array([0,3])
         # self.stepIni = 0.005
-        self.stepIni = 0.01
+        self.stepIni = 0.005
 
         # flag for state & input constraints
         self.flag_const = True
@@ -69,7 +68,7 @@ class mdGPS :
         self.eps_min = 1e-6
         
         # maxIter used for update function
-        self.maxIter = 100
+        self.maxIter = 20
         
         # the number of sample for fitted model, which determines how many times robot actually works
         self.num_fit = 20
@@ -84,7 +83,7 @@ class mdGPS :
         self.onPolicy = True
         
         # is state different with obsevation?
-        self.obsFlag = True
+        self.obsFlag = False
 
         # use kinematic model?
         self.flagKinModel = True
@@ -126,7 +125,7 @@ class mdGPS :
         cost_real = np.zeros(self.maxIter)
         
         # Initial policy from iLQR under known nominal model // pre-training for NN
-        W1,b1,W2,b2,W3,b3,pol_var,pol_var_inv,costNN_pre,xNominal,uNominal, iniPolicy = self.getInitialPolicy(stepIni)
+        W1,b1,W2,b2,W3,b3,pol_var,pol_var_inv,xNominal,uNominal, iniPolicy = self.getInitialPolicy(stepIni)
         
         # saving initial NN parameters
         W1_save[0,:,:] = W1
@@ -191,16 +190,16 @@ class mdGPS :
                 # 1. move real robot to get sample used for model learning, approximate global policy
                 print("move the robot !!")
                 if i == 0:
-                    x_fit, u_fit_m, cost_fit, o_fit = self.driveRobot(self.x0[j,:],self.onPolicy,i,iniPolicy) 
+                    x_fit, u_fit_m, cost_fit, o_fit = self.driveRobot(self.x0[j,:],self.onPolicy,i,iniPolicy,False) 
                 else :
                     xNominal, uNominal = localPolicySet[j].x_nominal,localPolicySet[j].u_nominal
-                    x_fit, u_fit_m, cost_fit, o_fit = self.driveRobot(self.x0[j,:],self.onPolicy,i,localPolicySet[j])
+                    x_fit, u_fit_m, cost_fit, o_fit = self.driveRobot(self.x0[j,:],self.onPolicy,i,localPolicySet[j],False)
                 cost_real_ini[j] = np.mean(cost_fit)             
                 
                 
                 # 2. fit linear gaussian global dynamics
                 myFitModelOldSet[j] = myFitModelSet[j]
-                if not self.flagKinModel == True :
+                if self.flagKinModel == False :
                     print("fit the local model !!")
                     myFitModelSet[j].update(x_fit,u_fit_m)
                     if i == 0 : 
@@ -316,9 +315,11 @@ class mdGPS :
             cost_real[i] = np.mean(cost_real_ini)
             
             # test policy
-            self.testRobot(self.x0,x_new,u_new) 
+            # self.testRobot(self.x0,x_new,u_new) 
+            self.driveRobot(self.x0,True,i,localPolicySet[0],True,x_new,u_new)
+            # driveRobot(self,x0,onPolicy,mainIter,localPolicy,flag_test,x_new=None,u_new=None)
             # 7. terminal condition (when the change of cNmN is extremly low)            
-            if np.abs(cNmN_NN - cPmP_NN) < 0.1 :
+            if np.abs(cNmN_NN - cPmP_NN) < 0.01 :
                 print("SUCCEESS : cost change < tolFun")
                 break
             else :
@@ -326,48 +327,7 @@ class mdGPS :
             
                 
         return W1_save, W2_save, W3_save, b1_save, b2_save, b3_save, var_save,i,cost_real
-          
-    def testRobot(self,x0,x_new,u_new) :
-        print "test starts"
-        
-        # parameter
-        N = self.N
-        ix = self.ix
-        iu = self.iu
-        io = self.io
-        num_fit = self.num_ini
-        
-        # data used for model learning
-        x_fit = np.zeros((N+1,ix,num_fit))
-        o_fit = np.zeros_like(x_fit)
-        u_fit_m = np.zeros((N,iu,num_fit))
-        cost_fit = np.zeros(num_fit)
-        
-        for im in range(num_fit):
-            x_fit[0,:,im] = x0[im,:] + 0 * np.array((1,1,0.3)) * (np.random.random(3) - 0.5)
-            o_fit[0,:,im] = getObs(self.x_t,x_fit[0,:,im],self.obsFlag)
-            
-            for ip in range(N) :
-
-                # mean policy will be performed    
-                '''
-                if ip == 0 :
-                    o_temp = np.vstack((o_fit[ip,:,im],o_fit[ip,:,im]))    
-                else :
-                    o_temp = np.vstack((o_fit[ip-1,:,im],o_fit[ip,:,im]))
-                '''
-                o_temp = o_fit[ip,:,im]
-                u_temp, var_temp = self.myPolicy.getPolicy(o_temp)
-                u_temp = np.squeeze(u_temp)  
-                      
-                u_fit_m[ip,:,im] = u_temp
-                x_fit[ip+1,:,im] = self.myModel.forwardDyn(x_fit[ip,:,im], u_fit_m[ip,:,im], ip)
-                o_fit[ip+1,:,im] = getObs(self.x_t,x_fit[ip+1,:,im],self.obsFlag)
-            cost_fit[im] = self.myTraj.getCost(x_fit[:,:,im],u_fit_m[:,:,im])
-            
-            print colored('mean value of real cost is', 'yellow'), colored(cost_fit[im], 'yellow')
-
-        getPlot(x_fit,u_fit_m,self.x_t,num_fit,N,x_new,u_new)    
+              
                 
     def fittingGlobalPolicy(self,x_fit,o_fit,myFitPolicy) :
         # variables
@@ -401,7 +361,7 @@ class mdGPS :
             
         return tempPolicy, myFitPolicy
                                    
-    def driveRobot(self,x0,onPolicy,mainIter,localPolicy) :
+    def driveRobot(self,x0,onPolicy,mainIter,localPolicy,flag_test,x_new=None,u_new=None) :
         
         # local policy
         x_traj = localPolicy.x_nominal
@@ -415,52 +375,54 @@ class mdGPS :
         ix = self.ix
         iu = self.iu
         io = self.io
-        num_fit = self.num_fit
+        if flag_test == True :
+            num_fit = self.num_ini
+        else :
+            num_fit = self.num_fit
         
         # data used for model learning
         x_fit = np.zeros((N+1,ix,num_fit))
         o_fit = np.zeros_like(x_fit)
         u_fit_m = np.zeros((N,iu,num_fit))
         cost_fit = np.zeros(num_fit)
-        
+
         for im in range(num_fit):
-            x_fit[0,:,im] = x0 + np.array((1,1,0.3)) * (np.random.random(3) - 0.5) * 0.2
+            if flag_test == True :
+                x_fit[0,:,im] = x0[im,:]
+            else :
+                x_fit[0,:,im] = x0 + np.array((1,1,0.3)) * (np.random.random(3) - 0.5) * 0.2
             o_fit[0,:,im] = getObs(self.x_t,x_fit[0,:,im],self.obsFlag)
-            
+
             for ip in range(N) :
-                if onPolicy == False :
-                    
-                    u_temp = np.random.multivariate_normal(u_traj[ip,:] + k_traj[ip,:] + np.dot(K_traj[ip,:,:],x_fit[ip,:,im] - x_traj[ip,:]),Quu_inv_traj[ip,:,:] / 1 )
-                      
-                else :
-                    
-                    '''
-                    if ip == 0 :
-                        o_temp = np.vstack((o_fit[ip,:,im],o_fit[ip,:,im]))    
-                    else :
-                        o_temp = np.vstack((o_fit[ip-1,:,im],o_fit[ip,:,im]))
-                    '''
+                if onPolicy == False:       
+                    u_temp = np.random.multivariate_normal(u_traj[ip,:] + k_traj[ip,:] + np.dot(K_traj[ip,:,:], \
+                                                           x_fit[ip,:,im] - x_traj[ip,:]),Quu_inv_traj[ip,:,:] / 1)             
+                else :                   
                     o_temp = o_fit[ip,:,im]     
                     u_temp, var_temp = self.myPolicy.getPolicy(o_temp)
-                    u_temp = np.random.multivariate_normal(np.squeeze(u_temp), var_temp[ip,:,:] / 1 )
+                    if flag_test == False :
+                        u_temp = np.random.multivariate_normal(np.squeeze(u_temp), var_temp[ip,:,:] / 1 )
+                    else :
+                        pass
                     u_temp = np.squeeze(u_temp)               
-
                 u_fit_m[ip,:,im] = u_temp
                 x_fit[ip+1,:,im] = self.myModel.forwardDyn(x_fit[ip,:,im], u_fit_m[ip,:,im], ip)
                 o_fit[ip+1,:,im] = getObs(self.x_t,x_fit[ip+1,:,im],self.obsFlag)
-            cost_fit[im] = self.myTraj.getCost(x_fit[:,:,im],u_fit_m[:,:,im])
-            
-            print colored('mean value of real cost is', 'yellow'), colored(cost_fit[im], 'yellow')
-        
-        getPlot(x_fit,u_fit_m,self.x_t,num_fit,N)  
 
-        return x_fit, u_fit_m, cost_fit, o_fit
+            cost_fit[im] = self.myTraj.getCost(x_fit[:,:,im],u_fit_m[:,:,im])
+            print colored('mean value of real cost is', 'yellow'), colored(cost_fit[im], 'yellow')
+        if flag_test == True :
+            getPlot(x_fit,u_fit_m,self.x_t,num_fit,N,x_new,u_new)
+            return None
+        else :
+            getPlot(x_fit,u_fit_m,self.x_t,num_fit,N)  
+            return x_fit, u_fit_m, cost_fit, o_fit
                 
     def getInitialPolicy(self,stepIni) :
         
         print("initial trajectories from iLQR")  
         # Initial trajectory distribution from iLQR with low number of iterations
-        i1 = iLQR('unicycle',self.N,1,self.myModel,self.myCost)
+        i1 = iLQR('unicycle',self.N,2,self.myModel,self.myCost)
         x0 = self.x0
         u0 = self.u0
         num_sample = 20
@@ -476,11 +438,11 @@ class mdGPS :
         var_inv_ini = np.zeros((N*num_sample,iu,iu))
         var_inv_set_ini = np.zeros((N,iu,iu,num_sample))
 
-        # iLQR with prior model
+        # iLQR with prior model without constraints
         x, u, Quu, Quu_inv, K, k_mat = i1.update(x0[0,:],u0)
-        u = u / 4
-        K = K / 4
-        k_mat = k_mat / 4
+        u = u 
+        K = K 
+        k_mat = k_mat 
 
         for k in range(num_sample):
             x0_sample = x0[0,:] + np.array((1,1,0.3)) * ( np.random.random(3) - 0.5 )
@@ -506,22 +468,13 @@ class mdGPS :
         iniPolicy = localPolicy("local",ix,iu,N)
         
         print("initial policy optimization starts!!")
-        for j in range(5) :
-            self.myPolicy.setEnv(self.maxIterNN,stepIni / (j+1) )
-            W1,b1,W2,b2,W3,b3,pol_var,pol_var_inv = self.myPolicy.update(o_ini,u_ini,var_inv_ini,var_inv_set_ini,num_sample)
-            # costNN_pre = getCostNN(x0[0,:],self.myPolicy,N,self.myTraj,self.myModel)
-            costNN_pre = 1e4
-            if costNN_pre < 1e10 :
-                # cPmP_NN = costNN_pre
-                print colored('initial policy parameter is updated true cost is ', 'green'), colored(costNN_pre, 'green')
-                break
-            else : 
-                print("NN is diversed")
-                pass
-            pass
-        
+        self.myPolicy.setEnv(self.maxIterNN,stepIni)
+        W1,b1,W2,b2,W3,b3,pol_var,pol_var_inv = self.myPolicy.update(o_ini,u_ini,var_inv_ini,var_inv_set_ini,num_sample)
+        # costNN_pre = getCostNN(x0[0,:],self.myPolicy,N,self.myTraj,self.myModel)
+        # print colored('initial policy parameter is updated true cost is ', 'green'), colored(costNN_pre, 'green')
+       
         iniPolicy.setter(K,k_mat,x,u , pol_var)
         
-        return W1,b1,W2,b2,W3,b3,pol_var,pol_var_inv,costNN_pre,x,u, iniPolicy
-        # return pol_var,pol_var_inv,costNN_pre,u, iniPolicy
+        return W1,b1,W2,b2,W3,b3,pol_var,pol_var_inv,x,u, iniPolicy
+
 

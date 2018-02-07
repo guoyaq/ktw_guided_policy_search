@@ -56,7 +56,7 @@ class trajOpt:
         self.eta = 1
         
         # KL constraint variable
-        self.epsilon = 5
+        self.epsilon = 2
 
         # state & input contstraints variables
         self.phi = np.ones(self.N+1) * 1.0
@@ -66,7 +66,7 @@ class trajOpt:
         self.flag_const = self.cost.flag_const
 
         # variables for constraints # self.cost.ic,
-        mu_ini = 0.1
+        mu_ini = 1e-2
         self.Mu = np.tile(np.identity(self.cost.ic),(self.N+1,1,1)) * mu_ini
         self.Munew = np.tile(np.identity(self.cost.ic),(self.N+1,1,1)) * mu_ini
         self.Mu_e = np.tile(np.identity(self.cost.ic),(self.N+1,1,1)) * mu_ini
@@ -611,7 +611,7 @@ class trajOpt:
         
         u_temp = uIni
         maxIterDGD = 20
-        maxIterConst = 100
+        maxIterConst = 7
         print("DGD starts!! eta = ", self.eta)
         for j in range(maxIterConst) :
             eta_max = 1e10
@@ -683,7 +683,7 @@ class trajOpt:
                         # print "Hi",c_const[i,j],i
                         self.lam[i,j,j] = np.max(( 0, self.lam[i,j,j] + self.Mu_e[i,j,j] * c_const[i,j] ))
                         # print self.lam[i,j,j]
-                        self.phi[i] = self.phi[i] / 2
+                        self.phi[i] = self.phi[i] / 5
                     else :
                         if self.Mu_e[i,j,j] < 1e30 :
                             self.Mu_e[i,j,j] = self.Mu_e[i,j,j] * 5

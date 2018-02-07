@@ -23,9 +23,10 @@ class tracking :
     def __init__(self,name,x_t,N,flag_const):
         self.name = name
        
-        self.Q = np.identity(2) * 1
-        self.Q = 0.5 * self.Q # 0.1
-        self.Q[1,1] = 0
+        self.Q = np.identity(2) * 0.3
+        # self.Q = 0.5 * self.Q
+        # self.Q[1,1] = self.Q[1,1] / 3
+        # self.Q[1,1] = 0
         
         self.R = 1 * np.identity(2) * 1
         
@@ -46,8 +47,16 @@ class tracking :
         else :
             N = np.size(x,axis = 0)
         
-        c1 = np.expand_dims(- x[:,0] + x[:,1],axis=1)
-        # c2 = np.expand_dims(u[:,0] - 1.0,axis=1)
+        c1 = np.expand_dims(- 3 * x[:,0] + 2 * x[:,1] - 6,axis=1)
+        # c2 = np.expand_dims(u[:,0] - 1.3,axis=1)
+        # c3 = np.expand_dims(- u[:,0] - 1.3,axis=1)
+        # c4 = np.expand_dims(getFOA(self.x_t,x)-0.6,axis=1)
+        # c4 = np.expand_dims(u[:,1] - 1.2,axis=1)
+        # c5 = np.expand_dims(- u[:,1] - 1.2,axis=1)
+        # print_np(c1)
+        # print_np(c4)
+
+        # c = np.hstack((c1,c2,c3))
         # c = np.hstack((c1,c2))
         c = c1
 
@@ -75,7 +84,7 @@ class tracking :
         # distance to target      
         d = np.sqrt( np.sum(np.square(x[:,0:2] - self.x_t),1) )
         d = np.expand_dims(d,1)
-        d_1 = d - 0
+        d_1 = d - 0.5
         
         # theta diff
         y_diff = np.zeros((N,1))
