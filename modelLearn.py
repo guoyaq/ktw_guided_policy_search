@@ -12,7 +12,7 @@ import scipy.linalg
 import time
 import random
 import tensorflow as tf
-import GPflow
+# import GPflow
 from termcolor import colored
 def print_np(x):
     print ("Type is %s" % (type(x)))

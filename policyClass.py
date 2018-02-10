@@ -39,12 +39,24 @@ class localPolicy :
         # policy variance
         self.polVar = np.zeros((N,iu,iu))
         
-    def setter(self,K_mat,k_mat,x,u,var) :
+    def setter(self,K_mat,k_mat,x=None,u=None,var=None) :
         self.K_mat = K_mat
         self.k_mat = k_mat
-        self.x_nominal = x
-        self.u_nominal = u
-        self.polVar = var
+        if x is None :
+            pass
+        else:
+            self.x_nominal = x
+
+        if u is None :
+            pass
+        else:
+            self.u_nominal = u
+
+        if var is None :
+            pass
+        else:
+            self.polVar = var
+
         
         
 

@@ -242,7 +242,7 @@ class iLQR:
             time_derivs = (time.clock() - start)
             
             # backward pass
-            backPassDone = False;
+            backPassDone = False
             while backPassDone == False:
                 start =time.clock()
                 diverge,Quu_save,Quu_inv_save = self.backward()

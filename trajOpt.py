@@ -64,6 +64,7 @@ class trajOpt:
 
         # flag const
         self.flag_const = self.cost.flag_const
+        self.flagAppNN = False
 
         # variables for constraints # self.cost.ic,
         mu_ini = 1e-2
@@ -136,7 +137,7 @@ class trajOpt:
         
         return x_temp,u_temp
         
-    def setEnv(self,policy,eta,epsilon,K_fit,k_fit,model) :
+    def setEnv(self,policy,eta,epsilon,K_fit,k_fit,model,myAppPolicy,flagAppNN) :
     
         self.policy = policy
         self.eta = eta
@@ -146,6 +147,10 @@ class trajOpt:
         # fitted policy
         self.K_fit = K_fit
         self.k_fit = k_fit
+
+        # flag
+        self.flagAppNN = flagAppNN
+        self.appPolicy = myAppPolicy
         
         # initial storage
         self.initStorage()
@@ -171,9 +176,12 @@ class trajOpt:
         
         # local approximated global policy
         x = np.expand_dims(x,2)
-        k_fit = np.expand_dims(k_fit,2)
-        mean_fit = np.matmul(K_fit, x) + k_fit
-        mean_fit = np.squeeze(mean_fit)
+        if self.flagAppNN == False :
+            k_fit = np.expand_dims(k_fit,2)
+            mean_fit = np.matmul(K_fit, x) + k_fit
+            mean_fit = np.squeeze(mean_fit)
+        else :
+            mean_fit = np.squeeze(self.appPolicy.getPolicy(np.squeeze(x,axis=2)))
         
         # cost for policy difference
         pol_diff = np.expand_dims(u - mean_fit,2)
@@ -205,13 +213,18 @@ class trajOpt:
         
         # local approximated global policy
         x = np.expand_dims(x,2)
-        k_fit = np.expand_dims(k_fit,2)
-        mean_fit = np.matmul(K_fit, x) + k_fit
-        mean_fit = np.squeeze(mean_fit)
-        # var_inv = np.tile(np.linalg.inv(var),(N,1,1))
+        if self.flagAppNN == False :
+            k_fit = np.expand_dims(k_fit,2)
+            mean_fit = np.matmul(K_fit, x) + k_fit
+            mean_fit = np.squeeze(mean_fit)
+        else :
+            mean_fit = np.squeeze(self.appPolicy.getPolicy(np.squeeze(x,axis=2)))
         
         pol_diff = np.expand_dims(u - mean_fit,2)
-        pol_jacobi = K_fit
+        if self.flagAppNN == False :
+            pol_jacobi = K_fit
+        else :
+            pol_jacobi = self.appPolicy.jacobian(np.squeeze(x,axis=2))
         
         cx = np.matmul(np.matmul(np.transpose(pol_diff,(0,2,1)),var_inv), - pol_jacobi)
         cu = np.matmul(np.transpose(pol_diff,(0,2,1)),var_inv)       
@@ -243,13 +256,19 @@ class trajOpt:
         
         # local approximated global policy
         x = np.expand_dims(x,2)
-        k_fit = np.expand_dims(k_fit,2)
-        mean_fit = np.matmul(K_fit, x) + k_fit
-        mean_fit = np.squeeze(mean_fit)
+        if self.flagAppNN == False :
+            k_fit = np.expand_dims(k_fit,2)
+            mean_fit = np.matmul(K_fit, x) + k_fit
+            mean_fit = np.squeeze(mean_fit)
+        else :
+            mean_fit = np.squeeze(self.appPolicy.getPolicy(np.squeeze(x,axis=2)))
         # var_inv = np.tile(np.linalg.inv(var),(N,1,1))
         
         pol_diff = np.expand_dims(u - mean_fit,2)
-        pol_jacobi = K_fit
+        if self.flagAppNN == False :
+            pol_jacobi = K_fit
+        else :
+            pol_jacobi = self.appPolicy.jacobian(np.squeeze(x,axis=2))
 
         # additional term
         cxx = np.matmul(np.matmul(np.transpose(- pol_jacobi,(0,2,1)),var_inv), - pol_jacobi)

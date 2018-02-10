@@ -24,7 +24,7 @@ class unicycle:
         self.iu = 2
         self.delT = 0.1
         
-    def forwardDyn(self,x,u,idx):
+    def forwardDyn(self,x,u,idx=None):
 
         # dimension
         ndim = np.ndim(x)
