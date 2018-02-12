@@ -131,7 +131,9 @@ class localModelLearn :
         
         # This code should be changed as matrix calculation
         for i in range(N) : 
-            temp = np.dot( np.linalg.inv( self.cov[i,0:self.ix+self.iu,0:self.ix+self.iu] ), self.cov[i,0:self.ix+self.iu,self.ix+self.iu:self.iData] )
+            # print_np( np.linalg.pinv( self.cov[i,0:self.ix+self.iu,0:self.ix+self.iu] ) )
+            # print_np( self.cov[i,0:self.ix+self.iu,self.ix+self.iu:self.iData] )
+            temp = np.dot( np.linalg.pinv( self.cov[i,0:self.ix+self.iu,0:self.ix+self.iu] ), self.cov[i,0:self.ix+self.iu,self.ix+self.iu:self.iData] )
             self.A[i,:,:] = temp[0:ix,:].T
             self.B[i,:,:] = temp[ix:ix+iu,:].T
             self.C[i,:] = self.mu[i,self.ix+self.iu:self.iData] - np.dot(temp.T, self.mu[i,0:self.ix+self.iu] )
@@ -253,7 +255,7 @@ class localPolicyLearn :
         
         # This code should be changed as matrix calculation
         for i in range(N) : 
-            temp = np.dot( np.linalg.inv( self.cov[i,0:self.ix,0:self.ix] ), self.cov[i,0:self.ix,self.ix:self.iData] )
+            temp = np.dot( np.linalg.pinv( self.cov[i,0:self.ix,0:self.ix] ), self.cov[i,0:self.ix,self.ix:self.iData] )
             self.K[i,:,:] = temp.T
             self.k[i,:] = self.mu[i,self.ix:self.iData] - np.dot(temp.T, self.mu[i,0:self.ix] )
             

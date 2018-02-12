@@ -68,35 +68,41 @@ class poliOpt:
         # Initialize tensorflow setting
         self.setInitial(self.maxIter,self.stepSize)
         
-    def setInitial(self,maxIter,stepSize) :
+    def setInitial(self,maxIter,stepSize,renew=None) :
         
         self.stepSize = stepSize
         self.maxIter = maxIter
-        
-        # tensorflow variables & parameters
-        self.Weight = tf.placeholder(tf.float32, [None,self.iu,self.iu])
-        self.input_x = tf.placeholder(tf.float32, [None,self.ix])
-        self.input_y = tf.placeholder(tf.float32, [None,self.iu])
-        
-        self.layer1 = fully_connected(self.input_x, self.hidden_num, scope= "layer1")
-        self.layer2 = fully_connected(self.layer1, self.hidden_num, scope = "layer2")
-        self.Y = fully_connected(self.layer2, self.iu, scope = "layer3", activation_fn = None)
-        '''
-        self.Y1,self.Y2 = tf.split(self.Y, [1,1],axis=1)
-        self.Y1 = 1.3 * tf.nn.tanh(self.Y1)
-        self.Y_pred = tf.concat([self.Y1, self.Y2],axis=1)
-        '''
-        # self.Y_pred = 1.3 * tf.nn.tanh(self.Y)
-        self.Y_pred = self.Y
 
-         # loss function
-        self.u_error = tf.expand_dims(self.Y_pred - self.input_y,2)
-        self.loss = tf.reduce_mean(tf.matmul( tf.matmul(tf.transpose(self.u_error,perm=[0,2,1]), self.Weight
-                    ),self.u_error) )
-        
-        # self.optimizer = tf.train.AdamOptimizer(self.stepSize).minimize(self.loss)
+        if not renew == True :
+            
+            
+            # tensorflow variables & parameters
+            self.Weight = tf.placeholder(tf.float32, [None,self.iu,self.iu])
+            self.input_x = tf.placeholder(tf.float32, [None,self.ix])
+            self.input_y = tf.placeholder(tf.float32, [None,self.iu])
+            
+            self.layer1 = fully_connected(self.input_x, self.hidden_num, scope= "layer1")
+            self.layer2 = fully_connected(self.layer1, self.hidden_num, scope = "layer2")
+            self.Y = fully_connected(self.layer2, self.iu, scope = "layer3", activation_fn = None)
+            '''
+            self.Y1,self.Y2 = tf.split(self.Y, [1,1],axis=1)
+            self.Y1 = 1.3 * tf.nn.tanh(self.Y1)
+            self.Y_pred = tf.concat([self.Y1, self.Y2],axis=1)
+            '''
+            # self.Y_pred = 1.3 * tf.nn.tanh(self.Y)
+            self.Y_pred = self.Y
+
+            # loss function
+            self.u_error = tf.expand_dims(self.Y_pred - self.input_y,2)
+            self.loss = tf.reduce_mean(tf.matmul( tf.matmul(tf.transpose(self.u_error,perm=[0,2,1]), self.Weight
+                        ),self.u_error) )
+            
+            # self.optimizer = tf.train.AdamOptimizer(self.stepSize).minimize(self.loss)
+            
+        else :
+            pass
+
         self.optimizer = tf.train.GradientDescentOptimizer(self.stepSize).minimize(self.loss)
-        
         self.init = tf.global_variables_initializer()
         self.sess = tf.Session()
         self.sess.run(self.init)   

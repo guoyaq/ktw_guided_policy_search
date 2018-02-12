@@ -17,14 +17,10 @@ def getCostNN(x0,policy,N,traj,model):
     u_traj = np.zeros((N,traj.iu))
     x_traj[0,:] = x0
     for i in range(N) :
-        if i == 0 :
-            x_temp = np.vstack((x_traj[i,:],x_traj[i,:]))
-        else : 
-            x_temp = np.vstack((x_traj[i-1,:],x_traj[i,:]))
-          
+        x_temp = x_traj[i,:]
         u_temp, var_temp = policy.getPolicy(x_temp)
         # u_temp = np.random.multivariate_normal(np.squeeze(u_temp), var_temp[i,:,:] )
-        u_traj[i,:] = u_temp
+        u_traj[i,:] = np.squeeze(u_temp)
         x_traj[i+1,:] = model.forwardDyn(x_traj[i,:],u_traj[i,:],i)     
     return traj.getCost(x_traj,u_traj)
 
@@ -51,7 +47,6 @@ def getCostTraj(x0,policy,N,traj,model):
     u = policy.u_nominal
     k = policy.k_mat
     K = policy.K_mat
-    Quu_inv = policy.polVar
     
     x_traj = np.zeros((N+1,traj.ix))
     u_traj = np.zeros((N,traj.iu))
@@ -130,17 +125,17 @@ def getPlot(x_fit,u_fit_m,x_t,num_fit,N,x_new=None,u_new=None):
 
     plt.subplot(132)
     for im in range(num_fit) : 
-        plt.plot(range(0,N),u_fit_m[:,0,im], linewidth=2.0)
+        plt.plot(range(0,N),x_fit[0:N,3,im]+u_fit_m[:,0,im], linewidth=2.0)
     if not u_new is None :
-        plt.plot(range(0,N),u_new[:,0], linewidth=1.0,linestyle='--')
+        plt.plot(range(0,N),x_new[0:N,3]+u_new[:,0], linewidth=1.0,linestyle='--')
     plt.xlabel('time (s)', fontsize = fS)
     plt.ylabel('v (m/s)', fontsize = fS)
 
     plt.subplot(133)
     for im in range(num_fit) : 
-        plt.plot(range(0,N),u_fit_m[:,1,im], linewidth=2.0)
+        plt.plot(range(0,N),x_fit[0:N,4,im]+u_fit_m[:,1,im], linewidth=2.0)
     if not u_new is None :
-        plt.plot(range(0,N),u_new[:,1], linewidth=1.0,linestyle='--')
+        plt.plot(range(0,N),x_new[0:N,4]+u_new[:,1], linewidth=1.0,linestyle='--')
     plt.xlabel('time (s)', fontsize = fS)
     plt.ylabel('w (rad/s)', fontsize = fS)
     plt.show()

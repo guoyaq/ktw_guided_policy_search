@@ -23,14 +23,16 @@ class tracking :
     def __init__(self,name,x_t,N,flag_const):
         self.name = name
        
-        self.Q = np.identity(2) * 0.3
-        # self.Q = 0.5 * self.Q
-        # self.Q[1,1] = self.Q[1,1] / 3
-        # self.Q[1,1] = 0
+        self.Q = np.identity(2)*0.3
+        # self.Q = 1e-1 * self.Q
+        self.Q[1,1] = self.Q[1,1] * 4
         
-        self.R = 1 * np.identity(2) * 1
+        self.R = 0.5 * np.identity(2)
         
-        self.ix = 3
+        self.Rc = 5 * np.identity(2)
+        self.Rc[1,1] = self.Rc[1,1] * 2
+        
+        self.ix = 5
         self.iu = 2
         self.x_t = x_t
         self.ic = 1
@@ -47,8 +49,8 @@ class tracking :
         else :
             N = np.size(x,axis = 0)
         
-        c1 = np.expand_dims(- 3 * x[:,0] + 2 * x[:,1] - 6,axis=1)
-        # c2 = np.expand_dims(u[:,0] - 1.3,axis=1)
+        # c1 = np.expand_dims(- 3 * x[:,0] + 2 * x[:,1] - 6,axis=1)
+        c2 = np.expand_dims(x[:,3] + u[:,0] - 1.4,axis=1)
         # c3 = np.expand_dims(- u[:,0] - 1.3,axis=1)
         # c4 = np.expand_dims(getFOA(self.x_t,x)-0.6,axis=1)
         # c4 = np.expand_dims(u[:,1] - 1.2,axis=1)
@@ -58,7 +60,7 @@ class tracking :
 
         # c = np.hstack((c1,c2,c3))
         # c = np.hstack((c1,c2))
-        c = c1
+        c = c2
 
         return c
         
@@ -99,13 +101,18 @@ class tracking :
         Q_mat = np.tile(self.Q,(N,1,1))
         
         lx = np.squeeze( np.matmul(np.matmul(np.transpose(x_mat,(0,2,1)),Q_mat),x_mat) )
-        
+
         # cost for input
-        u_mat = np.expand_dims(u,axis=2)
+        u_mat = np.expand_dims(u,axis=2) + np.expand_dims(x[:,3:5],axis=2)
         R_mat = np.tile(self.R,(N,1,1))
         lu = np.squeeze( np.matmul(np.matmul(np.transpose(u_mat,(0,2,1)),R_mat),u_mat) )
+        
+        # cost for input change
+        uc_mat = np.expand_dims(u,axis=2)
+        Rc_mat = np.tile(self.Rc,(N,1,1))
+        luc = np.squeeze( np.matmul(np.matmul(np.transpose(uc_mat,(0,2,1)),Rc_mat),uc_mat) )
 
-        cost_total = 0.5*(lx+lu)
+        cost_total = 0.5*(lx+lu+luc)
 
         # inequality constraint
         ineq_c = self.ineqConst(x,u)
