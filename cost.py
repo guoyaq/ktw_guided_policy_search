@@ -10,7 +10,7 @@ import scipy as sp
 import scipy.linalg
 import time
 import random
-from gps_util import getCostNN, getCostAppNN, getCostTraj, getObs
+from gps_util import getCostNN, getCostAppNN, getCostTraj, getObs, getFOA, getDist
 def print_np(x):
     print ("Type is %s" % (type(x)))
     print ("Shape is %s" % (x.shape,))
@@ -35,11 +35,34 @@ class tracking :
         self.ix = 5
         self.iu = 2
         self.x_t = x_t
-        self.ic = 1
+        self.ic = 2
         self.N = N
         self.flag_const = flag_const
+
+    def getConstCount(self,x,num_sample) :
+
+        # ndim = np.ndim(x)
+        # if ndim == 1: # 1 step state & input
+        #     N = 1
+        #     x = np.expand_dims(x,axis=0)
+        #     u = np.expand_dims(u,axis=0)
+        # else :
+        #     N = np.size(x,axis = 0)
+        total_count = np.zeros(num_sample)
+        total_max = np.zeros(num_sample)
+        for i in range(num_sample) :
+            num_const = self.ineqConst(x[:,:,i])
+            num_const2 = num_const > 0
+            total_count[i] = np.max(num_const2 * 1)
+            temp_max = np.max(num_const * 1)
+            if temp_max > 0 :
+                total_max[i] = temp_max
+            else :
+                total_max[i] = 0
+
+        return np.sum(total_count),np.mean(total_max)
         
-    def ineqConst(self,x,u) :
+    def ineqConst(self,x,u=None) :
         
         ndim = np.ndim(x)
         if ndim == 1: # 1 step state & input
@@ -50,17 +73,19 @@ class tracking :
             N = np.size(x,axis = 0)
         
         # c1 = np.expand_dims(- 3 * x[:,0] + 2 * x[:,1] - 6,axis=1)
-        c2 = np.expand_dims(x[:,3] + u[:,0] - 1.4,axis=1)
+        # c2 = np.expand_dims(x[:,3] + u[:,0] - 1.5,axis=1)
         # c3 = np.expand_dims(- u[:,0] - 1.3,axis=1)
-        # c4 = np.expand_dims(getFOA(self.x_t,x)-0.6,axis=1)
-        # c4 = np.expand_dims(u[:,1] - 1.2,axis=1)
-        # c5 = np.expand_dims(- u[:,1] - 1.2,axis=1)
+        c4 = np.expand_dims(getFOA(self.x_t,x)-0.6,axis=1)
+        c5 = np.expand_dims(-getFOA(self.x_t,x)-0.6,axis=1)
+        # c5 = np.expand_dims(getDist(self.x_t,x)-0.5,axis=1)
+        # c6 = np.expand_dims(u[:,1] - 1.2,axis=1)
+        # c7 = np.expand_dims(- u[:,1] - 1.2,axis=1)
         # print_np(c1)
         # print_np(c4)
-
         # c = np.hstack((c1,c2,c3))
         # c = np.hstack((c1,c2))
-        c = c2
+        c = np.hstack((c4,c5))
+        # c = c4
 
         return c
         
@@ -86,7 +111,7 @@ class tracking :
         # distance to target      
         d = np.sqrt( np.sum(np.square(x[:,0:2] - self.x_t),1) )
         d = np.expand_dims(d,1)
-        d_1 = d - 0.5
+        d_1 = d - 1.0
         
         # theta diff
         y_diff = np.zeros((N,1))
@@ -119,7 +144,7 @@ class tracking :
         ineq_c_mat = np.expand_dims(ineq_c,axis=2)
 
         # Mu matrix setting
-        flag_c = np.logical_or( ineq_c > 0, np.diagonal(lam,0,2,1) > 0 )
+        flag_c = np.logical_or( ineq_c >= 0, np.diagonal(lam,0,2,1) > 0 )
         Mu = np.expand_dims(flag_c,2) * Mu
         # print Mu
         # cost for constraint

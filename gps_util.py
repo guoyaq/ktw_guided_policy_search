@@ -28,8 +28,7 @@ def getCostAppNN(x0,policy,N,traj,model):
 #     x = policy.x_nominal
     k = policy.k_mat
     K = policy.K_mat
-    Quu_inv = policy.polVar
-    
+
     x_traj = np.zeros((N+1,traj.ix))
     u_traj = np.zeros((N,traj.iu))
     x_traj[0,:] = x0
@@ -112,10 +111,10 @@ def getPlot(x_fit,u_fit_m,x_t,num_fit,N,x_new=None,u_new=None):
     fS = 18
     for im in range(num_fit) : 
         plt.plot(x_fit[:,0,im],x_fit[:,1,im], linewidth=2.0)
-    if not x_new is None :
-        plt.plot(x_new[:,0],x_fit[:,1], linewidth=1.0,linestyle='--')
-    plt.plot(np.linspace(-3,3,10),3 / 2 * np.linspace(-3,3,10) + 3)
-    plt.plot(np.linspace(-3,3,10),- 3 / 2 * np.linspace(-3,3,10) + 3)
+        if not x_new is None :
+            plt.plot(x_new[:,0,im],x_fit[:,1,im], linewidth=1.0,linestyle='--')
+    # plt.plot(np.linspace(-3,3,10),3 / 2 * np.linspace(-3,3,10) + 3)
+    # plt.plot(np.linspace(-3,3,10),- 3 / 2 * np.linspace(-3,3,10) + 3)
     plt.plot(x_t[0],x_t[1],"o")
     plt.gca().set_aspect('equal', adjustable='box')
     plt.xlabel('X (m)', fontsize = fS)
@@ -126,24 +125,26 @@ def getPlot(x_fit,u_fit_m,x_t,num_fit,N,x_new=None,u_new=None):
     plt.subplot(132)
     for im in range(num_fit) : 
         plt.plot(range(0,N),x_fit[0:N,3,im]+u_fit_m[:,0,im], linewidth=2.0)
-    if not u_new is None :
-        plt.plot(range(0,N),x_new[0:N,3]+u_new[:,0], linewidth=1.0,linestyle='--')
+        if not u_new is None :
+            plt.plot(range(0,N),x_new[0:N,3,im]+u_new[:,0,im], linewidth=1.0,linestyle='--')
     plt.xlabel('time (s)', fontsize = fS)
     plt.ylabel('v (m/s)', fontsize = fS)
 
     plt.subplot(133)
     for im in range(num_fit) : 
         plt.plot(range(0,N),x_fit[0:N,4,im]+u_fit_m[:,1,im], linewidth=2.0)
-    if not u_new is None :
-        plt.plot(range(0,N),x_new[0:N,4]+u_new[:,1], linewidth=1.0,linestyle='--')
+        if not u_new is None :
+            plt.plot(range(0,N),x_new[0:N,4,im]+u_new[:,1,im], linewidth=1.0,linestyle='--')
     plt.xlabel('time (s)', fontsize = fS)
     plt.ylabel('w (rad/s)', fontsize = fS)
     plt.show()
     plt.figure(2,figsize=(20, 7))
     for im in range(num_fit) : 
         plt.plot(range(0,N+1),getFOA(x_t,x_fit[:,:,im]), linewidth=2.0)
-    plt.plot(range(0,N),u_fit_m[:,0,im]*0 + 0.6, linewidth=1.0,linestyle='--')   
-    plt.plot(range(0,N),u_fit_m[:,0,im]*0 - 0.6, linewidth=1.0,linestyle='--')  
+        if not x_new is None :
+            plt.plot(range(0,N+1),getFOA(x_t,x_new[:,:,im]), linewidth=2.0,linestyle='--')
+    plt.plot(range(0,N),u_fit_m[:,0,im]*0 + 0.6, linewidth=1.0,linestyle='-')   
+    plt.plot(range(0,N),u_fit_m[:,0,im]*0 - 0.6, linewidth=1.0,linestyle='-')  
     plt.xlabel('time (s)', fontsize = fS)
     plt.ylabel('angle (rad/s)', fontsize = fS)
     plt.show()
@@ -168,3 +169,65 @@ def getFOA(x_t,x) :
 
     # return theta_diff
     return np.squeeze(theta_diff,axis=1)
+
+def getDist(x_t,x) :
+
+    ndim = np.ndim(x)
+    if ndim == 1: # 1 step state & input
+        N = 1
+        x = np.expand_dims(x,axis=0)
+    else :
+        N = np.size(x,axis = 0)
+
+    # distance to target      
+    d = np.sqrt( np.sum(np.square(x[:,0:2] - x_t),1) )
+    # d = np.expand_dims(d,1)
+    return d
+
+def getxNominal(x0,uNominal,model,N) :
+
+    x_nominal = np.zeros((N+1,model.ix))
+    # nominal x setting
+    for ip in range(N+1) :
+        if ip == 0 :
+            x_nominal[ip,:] = x0
+        else :
+            x_nominal[ip,:] = model.forwardDyn(x_nominal[ip-1,:],uNominal[ip-1,:],ip-1)
+
+    return x_nominal
+
+
+class CGPS_LOG :
+    def __init__(self,name,maxIter,maxIterC,num_ini):
+        self.name = name
+
+        self.x_NN = [[''] * maxIter] * maxIterC
+        self.u_NN = [[''] * maxIter] * maxIterC
+        self.x_traj = [[''] * maxIter] * maxIterC
+        self.u_traj = [[''] * maxIter] * maxIterC
+
+        self.index_fin = [''] * maxIterC
+        self.indexC_fin = 0
+
+        self.count_const = np.ones((maxIterC,maxIter,num_ini))
+        self.max_const = np.ones((maxIterC,maxIter,num_ini))
+
+    def setter(self,x,u,x_traj,u_traj,index,indexC) :
+        
+        self.x_NN[indexC][index] = x
+        self.u_NN[indexC][index] = u
+        self.x_traj[indexC][index] = x
+        self.u_traj[indexC][index] = u
+
+    def setterIndexC(self,indexC) :
+
+        self.indexC_fin = indexC
+
+    def setterIndex(self,index,indexC) :
+
+        self.index_fin[indexC] = index
+
+    def setterCount(self,index,indexC,jIni,num,max_val) :
+
+        self.count_const[indexC,index,jIni] = num
+        self.max_const[indexC,index,jIni] = max_val

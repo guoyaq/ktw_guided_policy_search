@@ -1,7 +1,7 @@
 # coding: utf-8
 from __future__ import division
 import matplotlib.pyplot as plt
-get_ipython().magic(u'matplotlib inline')
+# get_ipython().magic(u'matplotlib inline')
 import numpy as np
 import scipy as sp
 import scipy.linalg
@@ -60,16 +60,13 @@ class trajOpt:
 
         # state & input contstraints variables
         self.phi = np.ones(self.N+1) * 1.0
-        self.tolConst = 1e-1 / 2
+        self.tolConst = 0.1
 
         # flag const
         self.flag_const = self.cost.flag_const
         self.flagAppNN = False
 
-        # variables for constraints # self.cost.ic,
-        mu_ini = 1e-2
-        self.Mu_e = np.tile(np.identity(self.cost.ic),(self.N+1,1,1)) * mu_ini
-        self.lam = np.tile(np.identity(self.cost.ic),(self.N+1,1,1)) * 0.01
+        
 
         # initial storage
         self.initStorage()
@@ -83,6 +80,12 @@ class trajOpt:
         self.S = np.tile(0.01*np.identity(self.model.ix),[self.N+1,1,1])
         self.u = np.zeros((self.N,self.model.iu))
         self.C = np.tile(0.01*np.identity(self.model.ix+self.model.iu),[self.N+1,1,1])
+
+        # variables for constraints # self.cost.ic,
+        mu_ini = 1e-2 * self.flag_const
+        self.Mu_e = np.tile(np.identity(self.cost.ic),(self.N+1,1,1)) * mu_ini * self.flag_const
+        self.lam = np.tile(np.identity(self.cost.ic),(self.N+1,1,1)) * 0.01 * self.flag_const
+
         
         # next trajectroy
         self.xnew = np.zeros((self.N+1,self.model.ix))
@@ -135,7 +138,7 @@ class trajOpt:
         
         return x_temp,u_temp
         
-    def setEnv(self,policy,eta,epsilon,K_fit,k_fit,model,myAppPolicy,flagAppNN,Mu,lam) :
+    def setEnv(self,policy,eta,epsilon,K_fit,k_fit,model,myAppPolicy,flagAppNN) :
     
         self.policy = policy
         self.eta = eta
@@ -149,10 +152,6 @@ class trajOpt:
         # flag
         self.flagAppNN = flagAppNN
         self.appPolicy = myAppPolicy
-
-        # dual variables
-        self.Mu_e = Mu
-        self.lam = lam
         
         # initial storage
         self.initStorage()
@@ -607,10 +606,10 @@ class trajOpt:
             pass
         return self.x, self.u, self.Quu_save, self.Quu_inv_save, self.L, self.l, lamda_max
     
-    def getCost(self,x,u) :
+    def getCost(self,x,u,Mu=None,lam=None) :
         
         u_temp = np.vstack((u,np.zeros((1,self.model.iu))))
-        temp_c = self.cost.estimateCost(x,u_temp)
+        temp_c = self.cost.estimateCost(x,u_temp,Mu,lam)
         
         return np.sum( temp_c )
         
@@ -629,14 +628,18 @@ class trajOpt:
 
     def iterDGD(self,x0,uIni) :
         
-        
         u_temp = uIni
-        maxIterDGD = 20
-        # maxIterConst = 7
+        maxIterDGD = 40
+        maxIterConst = 7
         print("DGD starts!! eta = ", self.eta)
         # for j in range(maxIterConst) :
         eta_max = 1e10
         eta_min = 1e-8
+
+        # state & input contstraints variables
+        self.phi = np.ones(self.N+1) * 1.0
+        # self.tolConst = 0.1
+
         for i in range(maxIterDGD) :
             uIni = u_temp * 1.0
             x_temp, u_temp, Quu_temp, Quu_inv_temp, K_temp, k_temp, flag_lamda = self.update(x0,uIni)
@@ -647,63 +650,99 @@ class trajOpt:
             # continuing condition
             if flag_lamda == True :
                 # increase eta
-                eta_min = self.eta
-                geom = np.sqrt(eta_max * eta_min)
-                self.eta = np.minimum(10 * eta_min,geom)
+                # eta_min = self.eta
+                # geom = np.sqrt(eta_max * eta_min)
+                # self.eta = np.minimum(10 * eta_min,geom)
+                self.eta = self.eta * 2
                 print("PD is not satisfied // increased eta = ", self.eta)
                 continue
             else :
                 pass
 
             # terminal condition for KL divergence
-            if kl <= 1.1 * self.epsilon and kl >= 0.9 * self.epsilon and flag_lamda == False :
+            flag_kl = False
+            if kl <= 1.15 * self.epsilon and kl >= 0.85 * self.epsilon and flag_lamda == False :
+                # print("======== kl satisfied =========",kl)
+                flag_kl = True
+            else :
+                flag_kl = False
+                # eta updates
+                if kl < 0.85 * self.epsilon :
+                    # decrease eta
+                    eta_max = self.eta
+                    geom = np.sqrt(eta_max * eta_min)
+                    self.eta = np.maximum(0.1*eta_max,geom)
+                    # self.eta = self.eta + 0.5 * (kl - self.epsilon)
+                    # print("KL < epsilon // decreased eta = ", self.eta)   
+                else :
+                    # increase eta 
+                    eta_min = self.eta
+                    geom = np.sqrt(eta_max * eta_min)
+                    self.eta = np.minimum(10 * eta_min,geom)
+                    # self.eta = self.eta + 0.5 * (kl - self.epsilon)
+                    # print("KL > epsilon // increased eta = ", self.eta)
+            
+            flag_c = True     
+            if self.flag_const == True :
+                flag_c = False
+                # constraint criterion
+                c_const = self.cost.ineqConst(x_temp, np.vstack((u_temp,np.zeros(self.model.iu)) )) # N * ic
+
+                if np.max(c_const) < self.tolConst:
+                    flag_c = True
+                    # print("======== sc satisfied =========, max(c) = ", np.max(c_const))
+                else :
+                    # print("max(c) = ", np.max(c_const))
+                    # Mu & lamda updates
+                    # print "update lagrangian variables"
+                    for i in range(self.N+1) :    
+                        for j in range(self.cost.ic) :
+                            if c_const[i,j] < self.phi[i] :
+                                # print "Hi",c_const[i,j],i
+                                self.lam[i,j,j] = np.max(( 0, self.lam[i,j,j] + self.Mu_e[i,j,j] * c_const[i,j] ))
+
+                                # print self.lam[i,j,j]
+                                self.phi[i] = self.phi[i] / 2
+                            else :
+                                if self.Mu_e[i,j,j] < 1e30 :
+                                    self.Mu_e[i,j,j] = self.Mu_e[i,j,j] * 3
+                                    # print "Hi", self.Mu_e[i,j,j]
+                                else :
+                                    print "Mu reaches the limit"
+                    #                 pass
+            else :
+                if flag_kl == True :
+                    # print("=================== dual gradient descent is converged ===================")
+                    # print("eta = ", self.eta)
+                    break
+                else :
+                    continue
+                    pass
+
+            if flag_c == True and flag_kl == True :
                 print("=================== dual gradient descent is converged ===================")
                 print("eta = ", self.eta)
+                self.tolConst = self.tolConst * 0.9
+                print("EXIT : max(c)", np.max(c_const), " < tolConst, tolConst becomes, ", self.tolConst)
+                print "update lagrangian variables"
+                for i in range(self.N+1) :    
+                    for j in range(self.cost.ic) :
+                        if c_const[i,j] < self.phi[i] :
+                            # print "Hi",c_const[i,j],i
+                            self.lam[i,j,j] = np.max(( 0, self.lam[i,j,j] + self.Mu_e[i,j,j] * c_const[i,j] ))
+
+                            # print self.lam[i,j,j]
+                            self.phi[i] = self.phi[i] / 2
+                        else :
+                            if self.Mu_e[i,j,j] < 1e30 :
+                                self.Mu_e[i,j,j] = self.Mu_e[i,j,j] * 3
+                                # print "Hi", self.Mu_e[i,j,j]
+                            else :
+                                print "Mu reaches the limit"
+                #                 pass
                 break
-
-            # eta updates
-            if kl < 0.9 * self.epsilon :
-                # decrease eta
-                eta_max = self.eta
-                geom = np.sqrt(eta_max * eta_min)
-                self.eta = np.maximum(0.1*eta_max,geom)
-                print("KL < epsilon // decreased eta = ", self.eta)   
             else :
-                # increase eta 
-                eta_min = self.eta
-                geom = np.sqrt(eta_max * eta_min)
-                self.eta = np.minimum(10 * eta_min,geom)
-                print("KL > epsilon // increased eta = ", self.eta)
-                
-            # if self.flag_const == False :
-            #     break
-
-            # # constraint criterion
-            # c_const = self.cost.ineqConst(x_temp, np.vstack((u_temp,np.zeros(self.model.iu)) )) # N * ic
-
-            # if np.max(c_const) < self.tolConst:
-            #     self.tolConst = self.tolConst * 0.9
-            #     print("EXIT : max(c)", np.max(c_const), " < tolConst, tolConst becomes, ", self.tolConst)
-            #     break
-            # else :
-            #     print("max(c) = ", np.max(c_const))
-
-            # # Mu & lamda updates
-            # print "update lagrangian variables"
-            # for i in range(self.N+1) :    
-            #     for j in range(self.cost.ic) :
-            #         if c_const[i,j] < self.phi[i] :
-            #             # print "Hi",c_const[i,j],i
-            #             self.lam[i,j,j] = np.max(( 0, self.lam[i,j,j] + self.Mu_e[i,j,j] * c_const[i,j] ))
-            #             # print self.lam[i,j,j]
-            #             self.phi[i] = self.phi[i] / 5
-            #         else :
-            #             if self.Mu_e[i,j,j] < 1e30 :
-            #                 self.Mu_e[i,j,j] = self.Mu_e[i,j,j] * 5
-            #                 # print "Hi", self.Mu_e[i,j,j]
-            #             else :
-            #                 print "Mu reaches the limit"
-            #                 pass
+                pass
 
                 
         return x_temp, u_temp, Quu_temp, Quu_inv_temp, self.eta, cost, K_temp, k_temp

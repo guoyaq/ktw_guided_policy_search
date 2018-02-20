@@ -5,7 +5,7 @@
 
 from __future__ import division
 import matplotlib.pyplot as plt
-get_ipython().magic(u'matplotlib inline')
+# get_ipython().magic(u'matplotlib inline')
 import numpy as np
 import scipy as sp
 import scipy.linalg
@@ -141,6 +141,8 @@ class poliOpt:
                 print "epoch " + str(i+1) + ", Training Loss= " + "{:.6f}".format(np.mean(loss))
             # save_path = self.saver.save(self.sess,"/tmp/ktw_learning_position_" + str(i-1) + ".ckpt")
         print("Optimization - policy mean is done")
+
+        return np.mean(loss)
         
     def varOpt(self) :
         
@@ -181,6 +183,26 @@ class poliOpt:
         
         # deterministic policy
         return self.sess.run(self.Y_pred,feed_dict={self.input_x: x}), self.policy_var
+
+    def setWeight(self,w1,w2,w3,b1,b2,b3) :
+        
+        with tf.variable_scope('layer1', reuse=True):
+            W1 = tf.get_variable('weights')
+            W1.assign(w1).eval(session=self.sess)
+            B1 = tf.get_variable('biases')
+            B1.assign(b1).eval(session=self.sess)
+            
+        with tf.variable_scope('layer2', reuse=True):
+            W2 = tf.get_variable('weights')
+            W2.assign(w2).eval(session=self.sess)
+            B2 = tf.get_variable('biases')
+            B2.assign(b2).eval(session=self.sess)
+            
+        with tf.variable_scope('layer3', reuse=True):
+            W3 = tf.get_variable('weights')
+            W3.assign(w3).eval(session=self.sess)
+            B3 = tf.get_variable('biases')
+            B3.assign(b3).eval(session=self.sess)
     
             
     def update(self,x,u,Q,Q_set,set_num) :
@@ -189,7 +211,7 @@ class poliOpt:
         self.setData(x,u,Q,Q_set)
         
         # mean optimization - backpropagation
-        self.meanOpt(set_num)
+        loss = self.meanOpt(set_num)
         
         # variance optimization
         self.varOpt()
@@ -198,7 +220,7 @@ class poliOpt:
         W1,b1,W2,b2,W3,b3 = self.getWeight()
         
         # return parameter, variance of policy
-        return W1,b1,W2,b2,W3,b3,self.policy_var, self.policy_var_inv
+        return W1,b1,W2,b2,W3,b3,self.policy_var, self.policy_var_inv, loss
         
 
 

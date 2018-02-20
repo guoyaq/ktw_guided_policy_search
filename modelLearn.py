@@ -5,7 +5,7 @@
 
 from __future__ import division
 import matplotlib.pyplot as plt
-get_ipython().magic(u'matplotlib inline')
+# get_ipython().magic(u'matplotlib inline')
 import numpy as np
 import scipy as sp
 import scipy.linalg
@@ -222,7 +222,7 @@ class localPolicyLearn :
             self.xuData = self.xuData[:,:,self.dataNum-self.movHorizon:self.dataNum]  
             self.dataNum = self.movHorizon
             
-    def prior_update(self) :
+    def prior_update(self,mu0=None) :
         
         N = self.N
         iData = self.iData
@@ -236,14 +236,21 @@ class localPolicyLearn :
 
             # update prior parameters    
             self.Phi = self.n0 * self.cov_bar
+            # if mu0 is None == True :
+            #     self.mu0 = self.mean_bar    
+            # else :
+            # if mu0 is None == True :
             self.mu0 = self.mean_bar
+            # else :
+            #     print "Using NN prior"
+            #     self.mu0 = mu0
               
     def poste_update(self,mean_hat,cov_hat,num_hat) : 
                 
         # posteriori estimation
-        temp = np.squeeze( np.matmul(np.expand_dims(mean_hat - self.mu0,axis=2),np.transpose(np.expand_dims(                 mean_hat - self.mu0, axis=2),[0,2,1]) ) )
+        temp = np.squeeze( np.matmul(np.expand_dims(mean_hat - self.mu0,axis=2),np.transpose(np.expand_dims(mean_hat - self.mu0, axis=2),[0,2,1]) ) )
         self.mu = ( self.m * self.mu0 + num_hat * mean_hat ) / ( self.m + num_hat)
-        self.cov = 1 / (num_hat + self.n0) * (self.Phi + num_hat * cov_hat                                               + num_hat * self.m / (num_hat + self.m) * temp )
+        self.cov = 1 / (num_hat + self.n0) * (self.Phi + num_hat * cov_hat + num_hat * self.m / (num_hat + self.m) * temp )
         
         
     def set_linear(self) :
@@ -260,12 +267,13 @@ class localPolicyLearn :
             self.k[i,:] = self.mu[i,self.ix:self.iData] - np.dot(temp.T, self.mu[i,0:self.ix] )
             
                 
-    def update(self,x_fit,u_fit_p) :
+    def update(self,x_fit,u_fit_p,mu0=None) :
         
         N = self.N
         iData = self.iData
         num_hat = x_fit.shape[2]
-        
+        # print "numhat", num_hat
+        # num_hat = 1
         # empirical mean and covariance from current iteration
         xuDataNew = np.hstack((x_fit[0:N,:,:],u_fit_p))
         mean_hat = np.mean(xuDataNew,axis=2)
@@ -274,8 +282,10 @@ class localPolicyLearn :
         for i in range(self.N) : 
             cov_hat[i,:,:] = np.cov(xuDataNew[i,:,:])
             
-        
-        self.prior_update()
+        if mu0 is None == True :
+            self.prior_update()
+        else :
+            self.prior_update(mu0)
         self.poste_update(mean_hat,cov_hat,num_hat)
         self.set_linear()
         

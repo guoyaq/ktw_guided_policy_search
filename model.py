@@ -244,40 +244,64 @@ class generalSlip :
         
         return np.squeeze(fx) , np.squeeze(fu)
 
-    def alpha_update(self,x_fit,u_fit,num_fit,N) :
+    def alpha_update(self,x_fit,u_fit,num_fit,N,num_ini) :
         
-        data_num = num_fit * N
-        
-        b = np.zeros((N,3,num_fit))
-        C = np.zeros((N,3,9,num_fit))
+        b = np.zeros((N,3,1,num_fit,num_ini))
+        C = np.zeros((N,3,9,num_fit,num_ini))
 
-        for i in range(num_fit) :
-            for ip in range(N) : 
-                    
-                    # position
-                    x_current = x_fit[ip,0:3,i]
-                    x_next = x_fit[ip+1,0:3,i]
+        b_mat = np.zeros((N*3*num_fit*num_ini,1))
+        C_mat = np.zeros((N*3*num_fit*num_ini,9))
 
-                    # robot input
-                    v = x_fit[ip,3,i] + u_fit[ip,0,i]
-                    w = x_fit[ip,4,i] + u_fit[ip,1,i]
+        index = -1
+        for j in range(num_ini) :
+            for i in range(num_fit) :
+                for ip in range(N) : 
+                        index += 1
 
-                    # rotation matrix
-                    R = np.zeros((3,3))
-                    R[0,0] = np.cos(x_current[2])
-                    R[0,1] = - np.sin(x_current[2])
-                    R[1,0] = np.sin(x_current[2])
-                    R[1,1] = np.cos(x_current[2])
-                    R[2,2] = 1
+                        # position
+                        x_current = x_fit[j][ip,0:3,i]
+                        x_next = x_fit[j][ip+1,0:3,i]
 
-                    # V IDD
-                    v_idd = np.zeros(3)
-                    v_idd[0] = v
-                    v_idd[2] = w
+                        # robot input
+                        v = x_fit[j][ip,3,i] + u_fit[j][ip,0,i]
+                        w = x_fit[j][ip,4,i] + u_fit[j][ip,1,i]
 
-                    b[ip,:,i] = np.matmul(np.linalg.inv(R),x_current-x_past) / self.delT - v_idd
-                    C[ip,:,:,i] = np.zeros((3,9))
+                        # rotation matrix
+                        R = np.zeros((3,3))
+                        R[0,0] = np.cos(x_current[2])
+                        R[0,1] = - np.sin(x_current[2])
+                        R[1,0] = np.sin(x_current[2])
+                        R[1,1] = np.cos(x_current[2])
+                        R[2,2] = 1
 
+                        # V IDD
+                        v_idd = np.zeros(3)
+                        v_idd[0] = v
+                        v_idd[2] = w
+
+                        b[ip,:,:,i,j] = np.matmul(np.linalg.inv(R),np.expand_dims(x_next-x_current,axis=1)) / self.delT - np.expand_dims(v_idd,axis=1)
+                        C[ip,:,:,i,j] = np.zeros((3,9))
+                        C[ip,0,0,i,j] = v
+                        C[ip,0,1,i,j] = np.abs(w)
+                        C[ip,0,2,i,j] = v * np.abs(w)
+
+                        C[ip,1,3,i,j] = v
+                        C[ip,1,4,i,j] = w
+                        C[ip,1,5,i,j] = v * w
+
+                        C[ip,2,6,i,j] = v
+                        C[ip,2,7,i,j] = w
+                        C[ip,2,8,i,j] = v * w
+
+                        C_mat[3*index:3*(index+1),:] = C[ip,:,:,i,j]
+                        b_mat[3*index:3*(index+1),:] = b[ip,:,:,i,j]
+                        # if ip < 10 :
+                        #     print np.matmul(C[ip,:,:,i,j],np.expand_dims(self.alpha,axis=1)) - b[ip,:,:,i,j]
+
+        alpha = np.matmul(np.linalg.pinv(C_mat), b_mat)
+        # print self.alpha
+        print np.squeeze(alpha)
+        self.alpha = np.squeeze(alpha)
 
         return None
 

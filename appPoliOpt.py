@@ -5,7 +5,7 @@
 
 from __future__ import division
 import matplotlib.pyplot as plt
-get_ipython().magic(u'matplotlib inline')
+# get_ipython().magic(u'matplotlib inline')
 import numpy as np
 import scipy as sp
 import scipy.linalg
@@ -104,9 +104,8 @@ class appPoliOpt:
             # self.sess = tf.Session()
             # self.sess.run(self.init)
         else :
-            self.kernel = GPy.kern.RBF(input_dim=self.ix, variance=self.kern_var \
-                            ,lengthscale=self.lengthscale)
-
+            # self.kernel = GPy.kern.RBF(input_dim=self.ix, variance=self.kern_var,lengthscale=self.lengthscale)
+            pass
     def setData(self,x,u) :
         
         # change data
@@ -153,6 +152,17 @@ class appPoliOpt:
             return self.sess.run(self.Y_pred,feed_dict={self.input_x: x})
         else :
             return self.m.predict(x)[0]
+
+    def getMean(self,x) :
+
+        ndim = np.ndim(x)
+        if ndim == 1: # 1 step state & input
+            x = np.expand_dims(x,axis=0)
+
+        u = self.getPolicy(x)
+
+        return np.hstack((x,u))
+
             
     
             
@@ -166,8 +176,8 @@ class appPoliOpt:
 
     def jacobian(self,x) :
 
-        ix = 3
-        iu = 2
+        ix = self.ix
+        iu = self.iu
         ndim = np.ndim(x)
         if ndim == 1: # 1 step state & input
             N = 1
@@ -175,7 +185,8 @@ class appPoliOpt:
         else :
             N = np.size(x,axis = 0)
 
-        if self.flagNN == True :
+        # if self.flagNN == True :
+        if False == True :
         
             fx1_val = np.transpose(np.array( self.sess.run(self.fx1,feed_dict={self.input_x: x}) ),axes=[1,0,2])
             fx2_val = np.transpose(np.array( self.sess.run(self.fx2,feed_dict={self.input_x: x}) ),axes=[1,0,2])
@@ -191,8 +202,8 @@ class appPoliOpt:
             x_aug = x_diag + eps_x * h
             x_aug = np.reshape( np.transpose(x_aug,(0,2,1)), (N*(ix),ix))
             # print_np(x_aug)
-            y_nominal = self.m.predict(x)[0]
-            y_change = self.m.predict(x_aug)[0]
+            y_nominal = self.getPolicy(x)
+            y_change = self.getPolicy(x_aug)
             y_change = np.reshape(y_change,(N,ix,iu))
             fx = (y_change - np.reshape(y_nominal,(N,1,iu)) ) / h
             fx = np.transpose(np.reshape(fx,(N,ix,iu)),[0,2,1])
